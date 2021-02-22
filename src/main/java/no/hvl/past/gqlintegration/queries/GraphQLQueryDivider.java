@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 
 public class GraphQLQueryDivider implements GraphQLQueryHandler {
 
-    private static Logger logger = Logger.getLogger(GraphQLQueryDivider.class);
+    private Logger logger = Logger.getLogger(GraphQLQueryDivider.class);
 
     // TODO make cursor its own class to have two advantages: 1) it can pre-calculate local names and field modifiers while requests are processed aynchronously 2) can make it technology independent of JSON
 

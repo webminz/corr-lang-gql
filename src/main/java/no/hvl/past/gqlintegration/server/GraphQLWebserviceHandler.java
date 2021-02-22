@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 
 public class GraphQLWebserviceHandler extends WebserviceRequestHandler {
 
-    private static Logger logger = Logger.getLogger(GraphQLWebserviceHandler.class);
+    private Logger logger = Logger.getLogger(GraphQLWebserviceHandler.class);
 
     public GraphQLWebserviceHandler(
             String url,

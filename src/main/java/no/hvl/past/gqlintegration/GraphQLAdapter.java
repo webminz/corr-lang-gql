@@ -27,6 +27,7 @@ import no.hvl.past.util.Pair;
 import org.apache.log4j.Logger;
 
 import java.io.*;
+import java.net.ConnectException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.LocalDateTime;
@@ -35,7 +36,7 @@ import java.util.*;
 import java.util.stream.Stream;
 
 public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechSpaceDirective {
-    private static Logger LOGGER = Logger.getLogger(GraphQLAdapter.class);
+    private Logger LOGGER = Logger.getLogger(GraphQLAdapter.class);
 
     private final Universe universe;
     private final PropertyHolder propertyHolder;
@@ -48,6 +49,8 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
     public Sketch parseSchema(Name schemaName, String fromURI) throws TechSpaceException {
         try {
             return parseSchema(schemaName, fromURI, new GraphQLSchemaReader(universe));
+        } catch (ConnectException ce) {
+            throw new TechSpaceException("GraphQL endpoint at URL '" + fromURI + "' is not running!", GraphQLTechSpace.INSTANCE);
         } catch (URISyntaxException | IOException | GraphError e) {
             throw new TechSpaceException(e, GraphQLTechSpace.INSTANCE);
         }

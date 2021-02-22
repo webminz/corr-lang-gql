@@ -28,7 +28,7 @@ import java.util.*;
  */
 public class DynamicQueryResolver implements DataFetcher {
 
-    private static Logger logger = Logger.getLogger(DynamicQueryResolver.class);
+    private Logger logger = Logger.getLogger(DynamicQueryResolver.class);
 
     private final GraphQLQueryHandler queryHandler;
     private final Sketch schema;
