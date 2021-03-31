@@ -16,6 +16,7 @@ import no.hvl.past.names.Name;
 import no.hvl.past.server.HttpMethod;
 import no.hvl.past.server.WebserviceRequestHandler;
 import no.hvl.past.util.GenericIOHandler;
+import no.hvl.past.util.IOStreamUtils;
 import org.apache.log4j.Logger;
 
 import java.io.IOException;
@@ -35,6 +36,7 @@ public class GraphQLWebserviceHandler extends WebserviceRequestHandler {
 
     private Logger logger = Logger.getLogger(GraphQLWebserviceHandler.class);
 
+    private GraphQLQueryHandler handler;
     public GraphQLWebserviceHandler(
             String url,
             String schemaAsText,
@@ -42,30 +44,31 @@ public class GraphQLWebserviceHandler extends WebserviceRequestHandler {
             Sketch schemaAsSketch,
             Map<Name, String> nameToText) {
         super(url, HttpMethod.POST,ResponseType.JSON);
+        this.handler = handler;
         TypeDefinitionRegistry typeReg = new SchemaParser().parse(schemaAsText);
         RuntimeWiring.Builder builder = RuntimeWiring.newRuntimeWiring();
-        logger.debug("Starting the GraphQL engine ");
-        LocalDateTime start = LocalDateTime.now();
-        if (schemaAsSketch.carrier().mentions(Name.identifier("Query"))) {
-            DynamicQueryResolver queryResolver = new DynamicQueryResolver(handler, schemaAsSketch,nameToText, Name.identifier("Query"));
-            builder = builder.type(TypeRuntimeWiring.newTypeWiring("Query").defaultDataFetcher(queryResolver));
-        }
-        if (schemaAsSketch.carrier().mentions(Name.identifier("Mutation"))) {
-            DynamicQueryResolver mutationResolver = new DynamicQueryResolver(handler, schemaAsSketch,nameToText, Name.identifier("Mutation"));
-            builder = builder.type(TypeRuntimeWiring.newTypeWiring("Mutation").defaultDataFetcher(mutationResolver));
-        }
-        Set<Name> collect = schemaAsSketch.carrier().nodes()
-                .filter(n -> !Name.identifier("Query").equals(n) && !Name.identifier("Mutation").equals(n))
-                .filter(n -> schemaAsSketch.diagramsOn(Triple.node(n)).noneMatch(diag -> GraphQLSchemaWriter.isBaseTypePredicate(diag.label())))
-                .collect(Collectors.toSet());
-        for (Name remainingObjectType : collect) {
-            builder = builder.type(TypeRuntimeWiring.newTypeWiring(nameToText.get(remainingObjectType)).defaultDataFetcher(new JsonDataFetcher()));
-        }
+//        logger.debug("Starting the GraphQL engine ");
+//        LocalDateTime start = LocalDateTime.now();
+//        if (schemaAsSketch.carrier().mentions(Name.identifier("Query"))) {
+//            DynamicQueryResolver queryResolver = new DynamicQueryResolver(handler, schemaAsSketch,nameToText, Name.identifier("Query"));
+//            builder = builder.type(TypeRuntimeWiring.newTypeWiring("Query").defaultDataFetcher(queryResolver));
+//        }
+//        if (schemaAsSketch.carrier().mentions(Name.identifier("Mutation"))) {
+//            DynamicQueryResolver mutationResolver = new DynamicQueryResolver(handler, schemaAsSketch,nameToText, Name.identifier("Mutation"));
+//            builder = builder.type(TypeRuntimeWiring.newTypeWiring("Mutation").defaultDataFetcher(mutationResolver));
+//        }
+//        Set<Name> collect = schemaAsSketch.carrier().nodes()
+//                .filter(n -> !Name.identifier("Query").equals(n) && !Name.identifier("Mutation").equals(n))
+//                .filter(n -> schemaAsSketch.diagramsOn(Triple.node(n)).noneMatch(diag -> GraphQLSchemaWriter.isBaseTypePredicate(diag.label())))
+//                .collect(Collectors.toSet());
+//        for (Name remainingObjectType : collect) {
+//            builder = builder.type(TypeRuntimeWiring.newTypeWiring(nameToText.get(remainingObjectType)).defaultDataFetcher(new JsonDataFetcher()));
+//        }
 
         RuntimeWiring runtimeWiring = builder.build();
         GraphQLSchema executableSchema = new SchemaGenerator().makeExecutableSchema(typeReg, runtimeWiring);
         graphQL = GraphQL.newGraphQL(executableSchema).build();
-        logger.debug("GraphQL engine started. Startup took " + Duration.between(start, LocalDateTime.now()).toMillis() + "ms");
+       // logger.debug("GraphQL engine started. Startup took " + Duration.between(start, LocalDateTime.now()).toMillis() + "ms");
     }
 
     private final GraphQL graphQL;
@@ -82,20 +85,22 @@ public class GraphQLWebserviceHandler extends WebserviceRequestHandler {
             public void handle(InputStream i, OutputStream o) throws IOException {
                 ObjectMapper om = new ObjectMapper();
                 JsonNode jsonNode = om.readTree(i);
-                if (jsonNode.get("operationName") != null && !jsonNode.get("operationName").asText().equals("null")) {
-                    ExecutionInput e = new ExecutionInput.Builder()
-                            .query(jsonNode.get("query").asText())
-                            .operationName(jsonNode.get("operationName").asText())
-                            .variables(convertToMap(om, jsonNode.get("variables")))
-                            .build();
-                    ExecutionResult execute = graphQL.execute(e);
-                    Map<String, Object> spec = execute.toSpecification();
-                    om.writeValue(o, spec);
-                } else {
-                    ExecutionResult executionResult = graphQL.execute(jsonNode.get("query").asText());
-                    Map<String, Object> spec = executionResult.toSpecification();
-                    om.writeValue(o, spec);
-                }
+//                if (jsonNode.get("operationName") != null && !jsonNode.get("operationName").asText().equals("null")) {
+//                    ExecutionInput e = new ExecutionInput.Builder()
+//                            .query(jsonNode.get("query").asText())
+//                            .operationName(jsonNode.get("operationName").asText())
+//                            .variables(convertToMap(om, jsonNode.get("variables")))
+//                            .build();
+//                    ExecutionResult execute = graphQL.execute(e);
+//                    Map<String, Object> spec = execute.toSpecification();
+//                    om.writeValue(o, spec);
+//                } else {
+//                    ExecutionResult executionResult = graphQL.execute(jsonNode.get("query").asText());
+//                    Map<String, Object> spec = executionResult.toSpecification();
+//                    om.writeValue(o, spec);
+//                }
+                // introspection
+
 
             }
 

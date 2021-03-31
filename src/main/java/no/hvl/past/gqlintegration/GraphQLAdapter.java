@@ -1,54 +1,68 @@
 package no.hvl.past.gqlintegration;
 
-import graphql.schema.GraphQLSchema;
-import graphql.schema.idl.RuntimeWiring;
-import graphql.schema.idl.SchemaGenerator;
-import graphql.schema.idl.SchemaParser;
-import graphql.schema.idl.TypeDefinitionRegistry;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParser;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import no.hvl.past.di.PropertyHolder;
-import no.hvl.past.gqlintegration.caller.GraphQLCaller;
-import no.hvl.past.gqlintegration.caller.GraphQLCallerFactory;
-import no.hvl.past.gqlintegration.queries.GraphQLQueryDelegator;
+
 import no.hvl.past.gqlintegration.queries.GraphQLQueryDivider;
-import no.hvl.past.gqlintegration.queries.GraphQLQueryHandler;
-import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
-import no.hvl.past.gqlintegration.server.GraphQLWebserviceHandler;
+import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.graph.*;
 import no.hvl.past.graph.trees.QueryHandler;
-import no.hvl.past.keys.Key;
+import no.hvl.past.graph.trees.QueryTree;
+import no.hvl.past.graph.trees.TypedTree;
 import no.hvl.past.names.Name;
+import no.hvl.past.names.PrintingStrategy;
 import no.hvl.past.plugin.UnsupportedFeatureException;
 import no.hvl.past.server.WebserviceRequestHandler;
+import no.hvl.past.systems.ComprSys;
+import no.hvl.past.systems.Sys;
 import no.hvl.past.techspace.TechSpaceAdapter;
 import no.hvl.past.techspace.TechSpaceDirective;
 import no.hvl.past.techspace.TechSpaceException;
-import no.hvl.past.util.Pair;
 import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.net.ConnectException;
-import java.net.URI;
 import java.net.URISyntaxException;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechSpaceDirective {
-    private Logger LOGGER = Logger.getLogger(GraphQLAdapter.class);
+
 
     private final Universe universe;
     private final PropertyHolder propertyHolder;
+    private final JsonFactory jsonFactory;
+    private final ObjectMapper objectMapper;
 
     public GraphQLAdapter(Universe universe, PropertyHolder propertyHolder) {
         this.universe = universe;
         this.propertyHolder = propertyHolder;
+        this.jsonFactory = new JsonFactory();
+        this.objectMapper = new ObjectMapper(jsonFactory);
     }
 
-    public Sketch parseSchema(Name schemaName, String fromURI) throws TechSpaceException {
+    public JsonParser jsonParser(InputStream inputStream) throws IOException {
+        return jsonFactory.createParser(inputStream);
+    }
+
+    public JsonGenerator jsonGenerator(OutputStream outputStream) throws IOException {
+        return jsonFactory.createGenerator(outputStream);
+    }
+
+    private GraphBuilders builder() {
+        return new GraphBuilders(universe, false, false);
+    }
+
+    public Sys parseSchema(Name schemaName, String fromURI) throws TechSpaceException, UnsupportedFeatureException {
         try {
-            return parseSchema(schemaName, fromURI, new GraphQLSchemaReader(universe));
+            return GraphQLEndpoint.createFromUrl(fromURI, schemaName, new GraphQLSchemaReader(universe), objectMapper, jsonFactory);
         } catch (ConnectException ce) {
             throw new TechSpaceException("GraphQL endpoint at URL '" + fromURI + "' is not running!", GraphQLTechSpace.INSTANCE);
         } catch (URISyntaxException | IOException | GraphError e) {
@@ -56,18 +70,79 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
         }
     }
 
-    private Sketch parseSchema(Name schemaName, String fromURI, GraphQLSchemaReader reader) throws GraphError, URISyntaxException, IOException {
-        if (fromURI.startsWith("file") || fromURI.startsWith(".")) {
-            // local file
-            File file = new File(new URI(fromURI));
-            TypeDefinitionRegistry registry = new SchemaParser().parse(file);
-            GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(registry, RuntimeWiring.newRuntimeWiring().build());
-            return reader.convert(schemaName, schema);
-        } else {
-            // introspection query
-            GraphQLCaller caller = GraphQLCallerFactory.getInstance().create();
-            GraphQLSchema schema = caller.getGraphQLSchema(fromURI);
-            return reader.convert(schemaName, schema);
+    @Override
+    public void writeSchema(Sys sys, OutputStream outputStream) throws TechSpaceException, UnsupportedFeatureException {
+        try {
+            GraphQLSchemaWriter schemaWriter = new GraphQLSchemaWriter();
+            BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
+            sys.schema().accept(schemaWriter);
+            schemaWriter.printToBuffer(writer);
+            writer.flush();
+            writer.close();
+        } catch (IOException e) {
+            throw new TechSpaceException(e, GraphQLTechSpace.INSTANCE);
+        }
+    }
+
+    @Override
+    public QueryHandler queryHandler(Sys system) throws TechSpaceException, UnsupportedFeatureException {
+        if (system instanceof GraphQLEndpoint) {
+            GraphQLEndpoint endpoint = (GraphQLEndpoint) system;
+            return endpoint.getOrCreateQueryHandler(objectMapper, jsonFactory);
+        }
+        if (system instanceof ComprSys) {
+            ComprSys comprSys = (ComprSys) system;
+            LinkedHashMap<Sys, QueryHandler> handlerMap = new LinkedHashMap<>();
+            for (Sys sys : comprSys.components().collect(Collectors.toList())) {
+                QueryHandler queryHandler = queryHandler(sys);
+                handlerMap.put(sys, queryHandler);
+            }
+            try {
+                return GraphQLQueryDivider.create(objectMapper, jsonFactory, comprSys, handlerMap);
+            } catch (IOException e) {
+                throw new TechSpaceException("Cannot create GraphQL handler for '" + system.url() + "'!", e, GraphQLTechSpace.INSTANCE);
+            }
+        }
+        throw new TechSpaceException("Cannot create GraphQL handler for '" + system.url() + "'!", GraphQLTechSpace.INSTANCE);
+    }
+
+    @Override
+    public GraphMorphism readInstance(Sys system, InputStream inputStream) throws TechSpaceException, UnsupportedFeatureException {
+        try {
+            if (system instanceof GraphQLEndpoint) {
+                GraphQLEndpoint endpoint = (GraphQLEndpoint) system;
+                return endpoint.parseQueryOrInstance(inputStream);
+            }
+            if (system instanceof ComprSys) {
+                return (TypedTree) GraphQLQueryDivider.create(objectMapper, jsonFactory,(ComprSys) system, new LinkedHashMap<>()).deserialize(inputStream);
+            }
+            throw new TechSpaceException("Cannot parse instance for '" + system.url() + "'", GraphQLTechSpace.INSTANCE);
+        } catch (IOException e) {
+            throw new TechSpaceException("Error occured parsing instance", e, GraphQLTechSpace.INSTANCE);
+        }
+    }
+
+    @Override
+    public void writeInstance(Sys system, GraphMorphism instance, OutputStream outputStream) throws TechSpaceException, UnsupportedFeatureException {
+        try {
+            if (system instanceof GraphQLEndpoint) {
+                GraphQLEndpoint endpoint = (GraphQLEndpoint) system;
+                if (instance instanceof QueryTree) {
+                    endpoint.serializeQuery((QueryTree) instance, outputStream);
+                } else {
+                    endpoint.serializeJson(instance, outputStream);
+                }
+            }
+            if (system instanceof ComprSys) {
+                if (instance instanceof TypedTree) {
+                    GraphQLQueryDivider.create(objectMapper, jsonFactory, (ComprSys) system, new LinkedHashMap<>()).serialize((TypedTree) instance, outputStream);
+                } else {
+                    throw new TechSpaceException("Cannot serialize non-tree shaped instances", GraphQLTechSpace.INSTANCE);
+                }
+            }
+            throw new TechSpaceException("Cannot write instance for '" + system.url() + "'", GraphQLTechSpace.INSTANCE);
+        } catch (IOException e) {
+            throw new TechSpaceException("Error occurred while writing instance " + instance.getName().print(PrintingStrategy.IGNORE_PREFIX), e, GraphQLTechSpace.INSTANCE);
         }
     }
 
@@ -75,81 +150,6 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
     @Override
     public TechSpaceDirective directives() {
         return this;
-    }
-
-
-    private void writeSchema(Sketch schema, OutputStream outputStream, GraphQLSchemaWriter writer) throws IOException {
-        schema.accept(writer);
-        BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(outputStream));
-        writer.printToBuffer(bufferedWriter);
-        bufferedWriter.flush();
-        bufferedWriter.close();
-    }
-
-    @Override
-    public void writeSchema(Sketch formalSchemaRepresentation, OutputStream outputStream) throws TechSpaceException {
-        GraphQLSchemaWriter wr = new GraphQLSchemaWriter();
-        try {
-            writeSchema(formalSchemaRepresentation, outputStream, wr);
-        } catch (IOException e) {
-            throw new TechSpaceException(e, GraphQLTechSpace.INSTANCE);
-        }
-    }
-
-    @Override
-    public QueryHandler queryHandler(String locationURI, String schemaLocationURI) throws TechSpaceException {
-        GraphQLSchemaReader reader = new GraphQLSchemaReader(universe);
-        Sketch schema;
-        try {
-            if (schemaLocationURI != null) {
-                schema = parseSchema(Name.identifier("Schema"), schemaLocationURI, reader);
-            } else {
-                schema = parseSchema(Name.identifier("Schema"), locationURI, reader);
-            }
-            return new GraphQLQueryDelegator(schema, locationURI, reader.getNameToText());
-        } catch (Exception e) {
-            throw new TechSpaceException(e, GraphQLTechSpace.INSTANCE);
-        }
-    }
-
-    @Override
-    public WebserviceRequestHandler federationQueryHandler(
-            Sketch comprehensiveSchema,
-            List<GraphMorphism> embeddings,
-            List<QueryHandler> localQueryHandlers) throws TechSpaceException, UnsupportedFeatureException {
-        try {
-            Map<GraphMorphism, GraphQLQueryHandler> handlerMap = new LinkedHashMap<>();
-            ListIterator<GraphMorphism> listIterator = embeddings.listIterator();
-            while (listIterator.hasNext()) {
-                int i = listIterator.nextIndex();
-                GraphMorphism next = listIterator.next();
-                if (localQueryHandlers.get(i) instanceof GraphQLQueryHandler) {
-                    GraphQLQueryHandler gqlHandler = (GraphQLQueryHandler) localQueryHandlers.get(i);
-                    handlerMap.put(next, gqlHandler);
-                }
-            }
-
-
-            Map<Name, Key> keys = new HashMap<>(); // TODO extend the Star
-         //   multiModel.components().forEach(component -> component.diagrams().filter(d -> d instanceof Key).map(d -> (Key) d).forEach(k -> {
-          //      keys.put(k.definedOnType(), k);
-         //   }));
-
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            GraphQLSchemaWriter schemaWriter = new GraphQLSchemaWriter();
-            writeSchema(comprehensiveSchema, bos, schemaWriter);
-            LOGGER.debug("GRAPH_QL schema for " + comprehensiveSchema.getName() + " is written");
-
-            String url = propertyHolder.getServerurl();
-            String gqlPath = propertyHolder.getPropertyAndSetDefaultIfNecessary("graphql.url", "/graphql");
-            GraphQLQueryHandler handler = new GraphQLQueryDivider(url + gqlPath, comprehensiveSchema, schemaWriter.getNameToText(), handlerMap, keys);
-            LOGGER.debug("GRAPH_QL query split/aggregator is created");
-
-            return new GraphQLWebserviceHandler(gqlPath, bos.toString(), handler, comprehensiveSchema, schemaWriter.getNameToText());
-        } catch (IOException e) {
-            LOGGER.error(e.getMessage(), e);
-            throw new TechSpaceException(e, GraphQLTechSpace.INSTANCE);
-        }
     }
 
 
@@ -175,6 +175,6 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
 
     @Override
     public Stream<Name> implicitTypeIdentities() {
-        return Stream.of(Name.identifier("ID"), Name.identifier("Query"), Name.identifier("Mutation"));
+        return Stream.of(Name.identifier("ID"));
     }
 }

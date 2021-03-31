@@ -1,35 +1,27 @@
 package no.hvl.past.gqlintegration.queries;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import no.hvl.past.gqlintegration.caller.GraphQLCaller;
-import no.hvl.past.gqlintegration.caller.GraphQLCallerFactory;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.graph.Sketch;
-import no.hvl.past.graph.trees.JsonTree;
-import no.hvl.past.graph.trees.QueryTree;
-import no.hvl.past.graph.trees.Tree;
 import no.hvl.past.names.Name;
+import no.hvl.past.systems.Sys;
 import no.hvl.past.util.IOStreamUtils;
-import no.hvl.past.util.Observer;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
-public class GraphQLQueryDelegator implements GraphQLQueryHandler {
+public class GraphQLQueryDelegator extends GraphQLQueryHandler {
 
     private final String url;
-    private final Sketch sketch;
-    private final Map<Name, String> plainNames;
 
-    public GraphQLQueryDelegator(Sketch schema, String url, Map<Name, String> plainNames) {
-        this.url = url;
-        this.sketch = schema;
-        this.plainNames = plainNames;
+    public GraphQLQueryDelegator(GraphQLEndpoint system) {
+        super(system);
+        this.url = system.url();
     }
 
     @Override
@@ -52,21 +44,6 @@ public class GraphQLQueryDelegator implements GraphQLQueryHandler {
             connection.disconnect();
             throw new IOException("HTTP error! return code: " + responseCode + ", detail: " + message);
         }
-    }
-
-    @Override
-    public String endpointUrl() {
-        return url;
-    }
-
-    @Override
-    public Sketch getSchema() {
-        return sketch;
-    }
-
-    @Override
-    public Map<Name, String> plainNames() {
-        return plainNames;
     }
 
 

@@ -3,6 +3,7 @@ package no.hvl.past.gqlintegration.caller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.google.common.collect.Sets;
 import graphql.introspection.IntrospectionResultToSchema;
 import graphql.language.Document;
 import graphql.schema.GraphQLSchema;
@@ -10,15 +11,28 @@ import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.hvl.past.attributes.TypedVariables;
+import no.hvl.past.gqlintegration.queries.GraphQLQuery;
+import no.hvl.past.graph.Graph;
+import no.hvl.past.graph.GraphImpl;
+import no.hvl.past.graph.elements.Triple;
+import no.hvl.past.graph.trees.QueryNode;
+import no.hvl.past.graph.trees.QueryTree;
+import no.hvl.past.logic.Formula;
+import no.hvl.past.names.Name;
+import no.hvl.past.util.StreamExt;
 
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
+import java.util.stream.Stream;
 
-public class GraphQLCallerImpl implements GraphQLCaller {
+public class IntrospectionQuery implements QueryTree {
 
+    public static final String GRAPHQL_META_INFO_PREFIX = "__";
     private HttpURLConnection connection;
 
     private static final String JSON_RESULT_CONTAINER_OBJ = "data";
@@ -115,7 +129,36 @@ public class GraphQLCallerImpl implements GraphQLCaller {
             "    }\n" +
             "  }";
 
-    @Override
+    private final String query;
+
+    private final String operationName;
+
+    private final Map<String, Object> variables;
+
+    public String getQuery() {
+        return query;
+    }
+
+    public Optional<String> getOperationName() {
+        return Optional.ofNullable(operationName);
+    }
+
+    public Optional<Map<String, Object>> getVariables() {
+        return Optional.ofNullable(variables);
+    }
+
+    public IntrospectionQuery() {
+        this.query = IntrospectionQuery.INTROSPECTION_QUERY;
+        this.operationName = null;
+        this.variables = null;
+    }
+
+    public IntrospectionQuery(String query, String operationName, Map<String, Object> variables) {
+        this.query = query;
+        this.operationName = operationName;
+        this.variables = variables;
+    }
+
     public GraphQLSchema getGraphQLSchema(String endpoint) throws IOException {
         final JsonNode result = this.executeQuery(endpoint, INTROSPECTION_QUERY);
         final ObjectMapper mapper = new ObjectMapper();
@@ -127,7 +170,7 @@ public class GraphQLCallerImpl implements GraphQLCaller {
         return generator.makeExecutableSchema(schema, RuntimeWiring.newRuntimeWiring().build());
     }
 
-    public JsonNode executeQuery(final String endpoint, final String query) throws IOException {
+    private JsonNode executeQuery(final String endpoint, final String query) throws IOException {
         this.setupConnection(new URL(endpoint));
         this.getConnection().connect();
         BufferedWriter outputWriter = new BufferedWriter(new OutputStreamWriter(this.getConnection().getOutputStream()));
@@ -149,7 +192,7 @@ public class GraphQLCallerImpl implements GraphQLCaller {
                     this.getConnection().disconnect();
                     final ObjectMapper mapper = new ObjectMapper();
                     final JsonNode root = mapper.readTree(result.toString());
-                    return root.get(GraphQLCallerImpl.JSON_RESULT_CONTAINER_OBJ);
+                    return root.get(IntrospectionQuery.JSON_RESULT_CONTAINER_OBJ);
 
                     case HttpURLConnection.HTTP_BAD_REQUEST:
                     case HttpURLConnection.HTTP_INTERNAL_ERROR:
@@ -186,5 +229,31 @@ public class GraphQLCallerImpl implements GraphQLCaller {
 
     private HttpURLConnection getConnection() {
         return connection;
+    }
+
+    @Override
+    public Stream<QueryNode.Root> queryRoots() {
+        return Stream.empty();
+    }
+
+    @Override
+    public String textualRepresentation() {
+        return query;
+    }
+
+    @Override
+    public Graph codomain() {
+        // TODO create a full space Graph of the the GraphQL schema...
+        return new GraphImpl(Name.identifier("GraphQL SDL"), Sets.newHashSet(Triple.node(Name.identifier("Type"))));
+    }
+
+    @Override
+    public Name getName() {
+        return Name.identifier("IntrospectionQuery");
+    }
+
+    @Override
+    public boolean isInfinite() {
+        return false;
     }
 }

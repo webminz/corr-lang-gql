@@ -1,18 +1,25 @@
 package no.hvl.past.gqlintegration;
 
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
+import no.hvl.past.gqlintegration.predicates.QueryMesage;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
+import no.hvl.past.graph.GraphBuilders;
 import no.hvl.past.graph.GraphError;
 import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.Universe;
 import no.hvl.past.graph.predicates.*;
 import no.hvl.past.names.Name;
+import no.hvl.past.systems.MessageArgument;
+import no.hvl.past.systems.MessageType;
 import org.junit.Test;
 
 import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import static junit.framework.TestCase.assertEquals;
 
@@ -21,35 +28,40 @@ public class SchemaWriterTest extends GraphQLTest {
     // Test vanilla
     @Test
     public void testSimple() throws GraphError, IOException {
-        Sketch result = contextCreatingBuilder()
-                .node("Query")
+
+        Sketch prelim = contextCreatingBuilder()
+                .node("Query.all")
                 .node("A")
-                .node("String")
-                .edge(Name.identifier("Query"), Name.identifier("all").prefixWith(Name.identifier("Query")), Name.identifier("A"))
-                .edge(Name.identifier("A"), Name.identifier("name").prefixWith(Name.identifier("A")), Name.identifier("String"))
+                .node("Text")
+                .edge(Name.identifier("Query.all"), Name.identifier("result").prefixWith(Name.identifier("Query.all")), Name.identifier("A"))
+                .edge(Name.identifier("A"), Name.identifier("name").prefixWith(Name.identifier("A")), Name.identifier("Text"))
                 .graph(Name.anonymousIdentifier())
                 .startDiagram(StringDT.getInstance())
-                .map(Universe.ONE_NODE_THE_NODE, Name.identifier("String"))
+                .map(Universe.ONE_NODE_THE_NODE, Name.identifier("Text"))
                 .endDiagram(Name.anonymousIdentifier())
                 .startDiagram(TargetMultiplicity.getInstance(1, 1))
                 .map(Universe.ARROW_SRC_NAME, Name.identifier("A"))
                 .map(Universe.ARROW_LBL_NAME, Name.identifier("name").prefixWith(Name.identifier("A")))
-                .map(Universe.ARROW_TRG_NAME, Name.identifier("String"))
+                .map(Universe.ARROW_TRG_NAME, Name.identifier("Text"))
                 .endDiagram(Name.anonymousIdentifier())
                 .startDiagram(Ordered.getInstance())
-                .map(Universe.ARROW_SRC_NAME, Name.identifier("Query"))
-                .map(Universe.ARROW_LBL_NAME, Name.identifier("all").prefixWith(Name.identifier("Query")))
+                .map(Universe.ARROW_SRC_NAME, Name.identifier("Query.all"))
+                .map(Universe.ARROW_LBL_NAME, Name.identifier("result").prefixWith(Name.identifier("Query.all")))
                 .map(Universe.ARROW_TRG_NAME, Name.identifier("A"))
                 .endDiagram(Name.anonymousIdentifier())
                 .sketch("Test")
                 .getResult(Sketch.class);
+        List<MessageArgument> agrs = new ArrayList<>();
+        QueryMesage qm = new QueryMesage(prelim.carrier(), Name.identifier("Query.all"), "Query", "all", agrs);
+        agrs.add(new MessageArgument(qm, Name.identifier("result").prefixWith(Name.identifier("Query.all")), Name.identifier("A"), 0, true));
 
-        String expected = "type A {\n" +
-                "   name : String!\n" +
-                "}\n" +
-                "\n" +
-                "type Query {\n" +
+        Sketch result = prelim.restrict(Arrays.asList(qm, agrs.get(0)));
+
+        String expected =     "type Query {\n" +
                 "   all : [A]\n" +
+                "}\n\n" +
+                "type A {\n" +
+                "   name : String!\n" +
                 "}\n" +
                 "\n";
 

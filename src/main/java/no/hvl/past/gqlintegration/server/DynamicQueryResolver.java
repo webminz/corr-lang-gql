@@ -4,11 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.schema.DataFetcher;
 import graphql.schema.DataFetchingEnvironment;
-import graphql.schema.DataFetchingFieldSelectionSet;
-import graphql.schema.SelectedField;
 import no.hvl.past.gqlintegration.queries.GraphQLQuery;
 import no.hvl.past.gqlintegration.queries.GraphQLQueryHandler;
-import no.hvl.past.gqlintegration.queries.GraphQLQueryNode;
 import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.names.Name;
@@ -81,34 +78,34 @@ public class DynamicQueryResolver implements DataFetcher {
     }
 
     private GraphQLQuery translate(DataFetchingEnvironment environment) throws IOException {
-        GraphQLQueryNode.Builder builder = new GraphQLQueryNode.Builder(Name.identifier(nameToText.get(root).toLowerCase()));
-        if (environment.getField().getName().equals(nameToText.get(root).toLowerCase())) {
-            translate(environment.getSelectionSet(), builder, root);
-        } else {
-            Pair<Name,Name> field = lookup(environment.getField().getName(), root);
-            GraphQLQueryNode.Builder childBuilder = builder.startChild(field.getFirst());
-
-            for (String argument : environment.getArguments().keySet()) {
-                childBuilder.argument(argument, environment.getArguments().get(argument).toString());
-            }
-            translate(environment.getSelectionSet(), childBuilder, field.getRight());
-        }
-        return new GraphQLQuery(builder);
+//        GraphQLQueryNode.Builder builder = new GraphQLQueryNode.Builder(Name.identifier(nameToText.get(root).toLowerCase()));
+//        if (environment.getField().getName().equals(nameToText.get(root).toLowerCase())) {
+//            translate(environment.getSelectionSet(), builder, root);
+//        } else {
+//            Pair<Name,Name> field = lookup(environment.getField().getName(), root);
+//            GraphQLQueryNode.Builder childBuilder = builder.startChild(field.getFirst());
+//
+//            for (String argument : environment.getArguments().keySet()) {
+//                childBuilder.argument(argument, environment.getArguments().get(argument).toString());
+//            }
+//            translate(environment.getSelectionSet(), childBuilder, field.getRight());
+//        }
+        return new GraphQLQuery(new ArrayList<>(), schema, Name.anonymousIdentifier()); // TODO obsolete
     }
 
-    private void translate(DataFetchingFieldSelectionSet selectionSet, GraphQLQueryNode.Builder builder, Name currentType) throws IOException {
-        Set<SelectedField> selectedFields = new HashSet<>(selectionSet.getFields());
-        for (SelectedField selectedField : selectedFields) {
-            Pair<Name,Name> fieldName = lookup(selectedField.getName(), currentType);
-            GraphQLQueryNode.Builder childBuilder = builder.startChild(fieldName.getFirst());
-
-            for (String argument : selectedField.getArguments().keySet()) {
-                childBuilder.argument(argument, selectedField.getArguments().get(argument).toString());
-            }
-
-            translate(selectedField.getSelectionSet(), childBuilder,fieldName.getRight());
-        }
-    }
+//    private void translate(DataFetchingFieldSelectionSet selectionSet, GraphQLQueryNode.Builder builder, Name currentType) throws IOException {
+//        Set<SelectedField> selectedFields = new HashSet<>(selectionSet.getFields());
+//        for (SelectedField selectedField : selectedFields) {
+//            Pair<Name,Name> fieldName = lookup(selectedField.getName(), currentType);
+//            GraphQLQueryNode.Builder childBuilder = builder.startChild(fieldName.getFirst());
+//
+//            for (String argument : selectedField.getArguments().keySet()) {
+//                childBuilder.argument(argument, selectedField.getArguments().get(argument).toString());
+//            }
+//
+//            translate(selectedField.getSelectionSet(), childBuilder,fieldName.getRight());
+//        }
+//    }
 
     /**
      * Retrieves the formal name of the edge representing the field

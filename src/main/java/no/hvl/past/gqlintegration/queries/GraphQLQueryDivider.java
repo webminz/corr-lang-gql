@@ -2,26 +2,47 @@ package no.hvl.past.gqlintegration.queries;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import graphql.ExecutionInput;
+import graphql.ExecutionResult;
+import graphql.GraphQL;
+import graphql.schema.GraphQLSchema;
+import graphql.schema.idl.RuntimeWiring;
+import graphql.schema.idl.SchemaGenerator;
+import graphql.schema.idl.SchemaParser;
+import graphql.schema.idl.TypeDefinitionRegistry;
+import no.hvl.past.gqlintegration.GraphQLEndpoint;
+import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
+import no.hvl.past.gqlintegration.predicates.MutationMessage;
+import no.hvl.past.gqlintegration.predicates.QueryMesage;
+import no.hvl.past.gqlintegration.schema.FieldMult;
+import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.graph.GraphMorphism;
 import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.predicates.*;
+import no.hvl.past.graph.trees.*;
 import no.hvl.past.keys.Key;
 import no.hvl.past.keys.KeyNotEvaluated;
 import no.hvl.past.names.Name;
+import no.hvl.past.names.PrintingStrategy;
+import no.hvl.past.systems.ComprSys;
+import no.hvl.past.systems.MessageArgument;
+import no.hvl.past.systems.Sys;
+import no.hvl.past.util.IOStreamUtils;
+import no.hvl.past.util.Pair;
 import org.apache.log4j.Logger;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-public class GraphQLQueryDivider implements GraphQLQueryHandler {
+public class GraphQLQueryDivider extends GraphQLQueryHandler {
 
     private Logger logger = Logger.getLogger(GraphQLQueryDivider.class);
 
@@ -41,19 +62,19 @@ public class GraphQLQueryDivider implements GraphQLQueryHandler {
     }
 
     private class TraverseStep {
-        private final Map<GraphMorphism, JsonNode> cursorPositions;
+        private final Map<Sys, JsonNode> cursorPositions;
         private final TraversePosition position;
         private final JsonGenerator target;
-        private final GraphQLQueryNode queryNode;
+        private final QueryNodeChildren currentEdge;
 
-        private TraverseStep(Map<GraphMorphism, JsonNode> cursorPositions,
+        private TraverseStep(Map<Sys, JsonNode> cursorPositions,
                             TraversePosition position,
                             JsonGenerator target,
-                            GraphQLQueryNode queryNode) {
+                             QueryNodeChildren currentEdge) {
             this.cursorPositions = cursorPositions;
             this.position = position;
             this.target = target;
-            this.queryNode = queryNode;
+            this.currentEdge = currentEdge;
         }
 
         public void advance() throws IOException, KeyNotEvaluated {
@@ -94,82 +115,91 @@ public class GraphQLQueryDivider implements GraphQLQueryHandler {
         }
 
         private void handleMergeObjects() throws KeyNotEvaluated, IOException {
-            Key key = keyMap.get(comprehensiveSchema.carrier().get(queryNode.getField()).get());
+            // TODO working with multiple keys must be addressed
+            List<Key> keys = comprSys.keys().filter(k -> k.targetType().equals(currentEdge.feature().getTarget())).collect(Collectors.toList());
             Set<Name> toIterate = new LinkedHashSet<>();
-            for (GraphMorphism ep : cursorPositions.keySet()) {
+            for (Sys ep : cursorPositions.keySet()) {
                 JsonNode node = cursorPositions.get(ep);
                 if (node.isArray()) {
                     Iterator<JsonNode> iterator = node.iterator();
                     while (iterator.hasNext()) {
                         JsonNode n = iterator.next();
-                        Name k = key.evaluate(n);
-                        toIterate.add(k);
-                        addToCache(ep, k, n);
+                        for (Key key : keys) {
+                            Name k = key.evaluate(n);
+                            toIterate.add(k);
+                            addToCache(ep, k, n);
+                        }
                     }
                 } else {
-                    Name k = key.evaluate(node);
-                    toIterate.add(k);
-                    addToCache(ep, k , node);
+                    for (Key key : keys) {
+                        Name k = key.evaluate(node);
+                        toIterate.add(k);
+                        addToCache(ep, k , node);
+                    }
                 }
             }
             for (Name k : toIterate) {
-                Map<GraphMorphism, JsonNode> mergedCursor = objectCursorCache.get(k);
+                Map<Sys, JsonNode> mergedCursor = objectCursorCache.get(k);
                 if (mergedCursor.keySet().size() <= 1) {
-                    new TraverseStep(mergedCursor, TraversePosition.LOCAL_OBJECT, target, queryNode).advance();
+                    new TraverseStep(mergedCursor, TraversePosition.LOCAL_OBJECT, target, currentEdge).advance();
                 } else {
-                    new TraverseStep(mergedCursor, TraversePosition.MERGED_OBJECT, target, queryNode).advance();
+                    new TraverseStep(mergedCursor, TraversePosition.MERGED_OBJECT, target, currentEdge).advance();
                 }
             }
         }
 
-        private void addToCache(GraphMorphism endpoint, Name key, JsonNode node) {
+        private void addToCache(Sys endpoint, Name key, JsonNode node) {
             if (objectCursorCache.containsKey(key)) {
                 objectCursorCache.get(key).put(endpoint, node);
             } else {
-                Map<GraphMorphism, JsonNode> cursorPos = new LinkedHashMap<>();
+                Map<Sys, JsonNode> cursorPos = new LinkedHashMap<>();
                 cursorPos.put(endpoint, node);
                 objectCursorCache.put(key, cursorPos);
             }
         }
 
         private void handleMergedField() throws IOException, KeyNotEvaluated {
-            Triple edge = comprehensiveSchema.carrier().get(queryNode.getField()).get();
-            boolean hasKeys = keyMap.containsKey(edge.getTarget());
-            boolean isObject = hasObjectReturnType(edge);
-            target.writeFieldName(plainNames.get(queryNode.getField()));
+            boolean hasKeys = comprSys.keys().anyMatch(k -> k.targetType().equals(currentEdge.feature().getTarget()));
+            boolean isObject = hasObjectReturnType(currentEdge.feature());
+            target.writeFieldName(currentEdge.key().print(PrintingStrategy.IGNORE_PREFIX));
             if (isObject) {
                 if (hasKeys) {
-                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_FUSE_ARRAY, target, queryNode).advance();
+                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_FUSE_ARRAY, target, currentEdge).advance();
                 } else {
-                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_CONCAT_ARRAY, target, queryNode).advance();
+                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_CONCAT_ARRAY, target, currentEdge).advance();
                 }
             } else {
-                new TraverseStep(cursorPositions, TraversePosition.MERGED_VALUE_ARRAY, target, queryNode).advance();
-
+                new TraverseStep(cursorPositions, TraversePosition.MERGED_VALUE_ARRAY, target, currentEdge).advance();
             }
         }
 
         private void handleConcat(boolean isObject) throws IOException, KeyNotEvaluated {
             target.writeStartArray();
-            for (GraphMorphism ep : cursorPositions.keySet()) {
+            for (Sys ep : cursorPositions.keySet()) {
+                TraversePosition nextPos;
+                if (isObject) {
+                        nextPos = TraversePosition.LOCAL_OBJECT;
+                } else {
+                    nextPos = TraversePosition.VALUE;
+                }
                 JsonNode root = cursorPositions.get(ep);
-                for (String f : localNames(ep, queryNode.getField())) {
-                    JsonNode node = root.get(f);
-                    if (node.isArray()) {
-                        Iterator<JsonNode> iterator = node.iterator();
+                if (root.isArray()) {
+                        Iterator<JsonNode> iterator = root.iterator();
                         while (iterator.hasNext()) {
-                            new TraverseStep(
-                                    Collections.singletonMap(ep, iterator.next()),
-                                    isObject ? TraversePosition.LOCAL_OBJECT : TraversePosition.VALUE,
-                                    target,
-                                    queryNode).advance();
+                            JsonNode node = iterator.next();
+                                new TraverseStep(
+                                        Collections.singletonMap(ep, node),
+                                        nextPos,
+                                        target,
+                                        currentEdge).advance();
+
                         }
                     } else {
-                        new TraverseStep(Collections.singletonMap(ep, node),
-                                isObject ? TraversePosition.LOCAL_OBJECT : TraversePosition.VALUE,
-                                target,
-                                queryNode).advance();
-                    }
+                            new TraverseStep(
+                                    Collections.singletonMap(ep, root),
+                                    nextPos,
+                                    target,
+                                    currentEdge).advance();
                 }
             }
             target.writeEndArray();
@@ -179,10 +209,10 @@ public class GraphQLQueryDivider implements GraphQLQueryHandler {
 
         private void handleMergedObject() throws IOException, KeyNotEvaluated {
             target.writeStartObject();
-            for (GraphQLQueryNode child : queryNode.getChildren()) {
-                Map<GraphMorphism, JsonNode> canDeliver = new LinkedHashMap<>();
-                for (GraphMorphism ep : cursorPositions.keySet()) {
-                    if (ep.selectByLabel(child.getField()).anyMatch(x -> true)) {
+            for (QueryNodeChildren child : currentEdge.child().children().collect(Collectors.toList())) {
+                Map<Sys, JsonNode> canDeliver = new LinkedHashMap<>();
+                for (Sys ep : cursorPositions.keySet()) {
+                    if (comprSys.localNames(ep, child.feature().getLabel()).anyMatch(x -> true)) {
                         canDeliver.put(ep, cursorPositions.get(ep));
                     }
                 }
@@ -197,7 +227,7 @@ public class GraphQLQueryDivider implements GraphQLQueryHandler {
                             target,
                             child).advance();
                 } else {
-                    target.writeFieldName(plainNames.get(child.getField()));
+                    target.writeFieldName(child.key().print(PrintingStrategy.IGNORE_PREFIX));
                     target.writeNull();
                 }
             }
@@ -207,64 +237,61 @@ public class GraphQLQueryDivider implements GraphQLQueryHandler {
 
         private void handleObject() throws IOException, KeyNotEvaluated {
             target.writeStartObject();
-            GraphMorphism key = cursorPositions.keySet().iterator().next();
+            Sys key = cursorPositions.keySet().iterator().next();
             JsonNode jsonNode = cursorPositions.get(key);
-            for (GraphQLQueryNode child : queryNode.getChildren()) {
+            for (QueryNodeChildren c : currentEdge.child().children().collect(Collectors.toList())) {
                 new TraverseStep(Collections.singletonMap(key, jsonNode),
                         TraversePosition.LOCAL_FIELD,
                         target,
-                        child).advance();
+                        c).advance();
             }
             target.writeEndObject();
         }
 
         private void handleArray(boolean isObject) throws IOException, KeyNotEvaluated {
             target.writeStartArray();
-            GraphMorphism key = cursorPositions.keySet().iterator().next();
+            Sys key = cursorPositions.keySet().iterator().next();
             JsonNode jsonNode = cursorPositions.get(key);
             Iterator<JsonNode> iterator = jsonNode.iterator();
             while (iterator.hasNext()) {
                 new TraverseStep(Collections.singletonMap(key, iterator.next()),
                         isObject ?  TraversePosition.LOCAL_OBJECT : TraversePosition.VALUE,
                         target,
-                        queryNode).advance();
+                        currentEdge).advance();
             }
             target.writeEndArray();
         }
 
         private void handleField() throws IOException, KeyNotEvaluated {
-            GraphMorphism key = cursorPositions.keySet().iterator().next();
-            if (key.selectByLabel(queryNode.getField()).anyMatch(x -> true)) {
-                target.writeFieldName(plainNames.get(queryNode.getField()));
-                Triple edge = comprehensiveSchema.carrier().get(queryNode.getField()).get();
-                Set<String> fieldNames = localNames(key, queryNode.getField());
-
-                boolean listValued = isListValued(edge);
-                boolean isObject = hasObjectReturnType(edge);
-                if (listValued || fieldNames.size() > 1) {
-                    if (fieldNames.size() == 1) {
-                        String fName = fieldNames.iterator().next();
+            Sys key = cursorPositions.keySet().iterator().next();
+            Set<Name> localNames = comprSys.localNames(key, currentEdge.feature().getLabel()).collect(Collectors.toSet());
+            if (!localNames.isEmpty()) {
+                target.writeFieldName(currentEdge.key().print(PrintingStrategy.IGNORE_PREFIX));
+                boolean listValued = isListValued(currentEdge.feature());
+                boolean isObject = hasObjectReturnType(currentEdge.feature());
+                if (listValued || localNames.size() > 1) {
+                    for (Name localName : localNames) {
+                        String fName = key.displayName(localName);
                         if (isObject) {
-                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.OBJECT_ARRAY, target, queryNode).advance();
+                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.OBJECT_ARRAY, target, currentEdge).advance();
                         } else {
-                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE_ARRAY, target, queryNode).advance();
+                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE_ARRAY, target, currentEdge).advance();
                         }
-                    } else {
-                        // TODO multiple preimages
                     }
                 } else {
-                    String fName = fieldNames.iterator().next();
+                    String fName = key.displayName(localNames.iterator().next());
                     if (isObject) {
-                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.LOCAL_OBJECT, target, queryNode).advance();
+                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.LOCAL_OBJECT, target, currentEdge).advance();
                     } else {
-                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE, target, queryNode).advance();
+                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE, target, currentEdge).advance();
                     }
                 }
+
             }
         }
 
         private void handleValue() throws IOException {
-            GraphMorphism ep = cursorPositions.keySet().iterator().next();
+            Sys ep = cursorPositions.keySet().iterator().next();
             JsonNode jsonNode = cursorPositions.get(ep);
             if (jsonNode.isTextual()) {
                 target.writeString(jsonNode.asText());
@@ -283,155 +310,212 @@ public class GraphQLQueryDivider implements GraphQLQueryHandler {
 
     }
 
-    private Set<String> localNames(GraphMorphism ep, Name fieldName) {
-        return ep.selectByLabel(fieldName)
-                .map(Triple::getLabel)
-                .map(n -> handlerMap.get(ep).plainNames().get(n))
-                .collect(Collectors.toSet());
+    private Set<String> localNames(Sys ep, Name fieldName) {
+        return comprSys.localNames(ep, fieldName).map(ep::displayName).collect(Collectors.toSet());
     }
 
     private boolean isListValued(Triple edge) {
-        return comprehensiveSchema.diagramsOn(edge).noneMatch(diag -> TargetMultiplicity.class.isAssignableFrom(diag.label().getClass()) && ((TargetMultiplicity) diag.label()).getUpperBound() <= 1);
+        // TODO replace with a respective method in system
+        return comprSys.schema().diagramsOn(edge).noneMatch(diag -> TargetMultiplicity.class.isAssignableFrom(diag.label().getClass()) && ((TargetMultiplicity) diag.label()).getUpperBound() <= 1);
     }
 
     private boolean hasObjectReturnType(Triple edge) {
-        return comprehensiveSchema.diagramsOn(Triple.node(edge.getTarget())).noneMatch(diag -> {
-            return StringDT.class.isAssignableFrom(diag.label().getClass()) ||
-                    IntDT.class.isAssignableFrom(diag.label().getClass()) ||
-                    FloatDT.class.isAssignableFrom(diag.label().getClass()) ||
-                    BoolDT.class.isAssignableFrom(diag.label().getClass());
-        });
+        return !comprSys.isAttributeType(edge);
     }
 
+    // TODO remove
+    private final Map<Name, Map<Sys, JsonNode>> objectCursorCache;
 
-    private static final Name QUERY_ROOT = Name.identifier("query");
+    private ComprSys comprSys;
+    private Map<Sys, QueryHandler> localHandlers;
+    private GraphQL javaGraphQLEngine;
 
-    private final String url;
-    private final Sketch comprehensiveSchema;
-    private final Map<GraphMorphism, GraphQLQueryHandler>  handlerMap;
-    private final Map<Name, Key> keyMap;
-    private final Map<Name, Map<GraphMorphism, JsonNode>> objectCursorCache;
-    private final Map<Name, String> plainNames;
-
-    public GraphQLQueryDivider(String url,
-                               Sketch comprehensiveSchema,
-                               Map<Name, String> plainNames,
-                               Map<GraphMorphism, GraphQLQueryHandler> handlerMap,
-                               Map<Name, Key> keyMap) {
-        this.url = url;
-        this.handlerMap = handlerMap;
-        this.keyMap = keyMap;
-        this.comprehensiveSchema = comprehensiveSchema;
-        this.plainNames = plainNames;
+    public GraphQLQueryDivider(ComprSys comprSys, Map<Sys, QueryHandler> localHandlers, GraphQL javaGraphQLEngine, GraphQLEndpoint endpoint) {
+        super(endpoint);
+        this.comprSys = comprSys;
+        this.localHandlers = localHandlers;
+        this.javaGraphQLEngine = javaGraphQLEngine;
+        // TODO remove
         this.objectCursorCache = new LinkedHashMap<>();
     }
 
 
     @Override
     public void handle(InputStream i, OutputStream o) throws IOException {
-        LocalDateTime startParse = LocalDateTime.now();
-        GraphQLQuery query = parse(i);
-        logger.debug("Query handling - parsing took:" + Duration.between(startParse, LocalDateTime.now()).toMillis() + " ms");
-        LocalDateTime startSplit = LocalDateTime.now();
-        Map<GraphMorphism, GraphQLQuery> localQueries = split(query);
-        logger.debug("Query handling - split took:" + Duration.between(startSplit, LocalDateTime.now()).toMillis() + " ms");
-        LocalDateTime startDelegate = LocalDateTime.now();
-        Map<GraphMorphism, InputStream> localQueryResults = executeQueries(localQueries);
-        logger.debug("Query handling - delegate took:" + Duration.between(startDelegate, LocalDateTime.now()).toMillis() + " ms");
         try {
-            LocalDateTime startMerge = LocalDateTime.now();
-            merge(localQueryResults, query, o);
-            logger.debug("Query handling - merge took:" + Duration.between(startMerge, LocalDateTime.now()).toMillis() + " ms");
+            LocalDateTime parseStart = LocalDateTime.now();
+            TypedTree typedTree = deserialize(i);
+            LocalDateTime parseEnd = LocalDateTime.now();
+            System.out.println("Query parsing: " + Duration.between(parseStart, parseEnd).toMillis() + " ms");
+
+            if (typedTree instanceof IntrospectionQuery) {
+                this.handleIntrospectionQuery((IntrospectionQuery) typedTree, o);
+            } else if (typedTree instanceof GraphQLQuery) {
+                GraphQLQuery globalQuery = (GraphQLQuery) typedTree;
+                Map<Sys, GraphQLQuery> localQueries = split(globalQuery);
+                Map<Sys, InputStream> localQueryResults = executeQueries(localQueries);
+                merge(localQueryResults, globalQuery, o);
+            } else {
+                throw new IOException("Cannot handle this query!");
+            }
         } catch (KeyNotEvaluated keyNotEvaluated) {
             throw new IOException(keyNotEvaluated);
         }
     }
 
-
-    @Override
-    public String endpointUrl() {
-        return url;
+    public void handleIntrospectionQuery(IntrospectionQuery query, OutputStream os) throws IOException {
+        if (query.getOperationName().isPresent()) {
+            ExecutionInput e = new ExecutionInput.Builder()
+                    .query(query.getQuery())
+                    .operationName(query.getOperationName().get())
+                    .variables(query.getVariables().get())
+                    .build();
+            ExecutionResult execute = javaGraphQLEngine.execute(e);
+            Map<String, Object> spec = execute.toSpecification();
+            getObjectMapper().writeValue(os, spec);
+        } else {
+            ExecutionResult executionResult = javaGraphQLEngine.execute(query.getQuery());
+            Map<String, Object> spec = executionResult.toSpecification();
+            getObjectMapper().writeValue(os, spec);
+        }
     }
 
-    @Override
-    public Sketch getSchema() {
-        return comprehensiveSchema;
-    }
 
-    @Override
-    public Map<Name, String> plainNames() {
-        return plainNames;
-    }
 
 
     public void merge(
-            Map<GraphMorphism, InputStream> localQueryResults,
+            Map<Sys, InputStream> localQueryResults,
             GraphQLQuery originalQuery,
             OutputStream outputStream) throws IOException, KeyNotEvaluated {
-        JsonGenerator generator = new JsonFactory().createGenerator(outputStream);
+        IOStreamUtils.Wiretap wiretap = new IOStreamUtils.Wiretap(outputStream);
+        JsonGenerator generator = getJsonFactory().createGenerator(wiretap);
         generator.writeStartObject();
         generator.writeFieldName("data");
-        ObjectMapper objectMapper = new ObjectMapper();
+        generator.writeStartObject();
 
-        Map<GraphMorphism, JsonNode> cursors = new LinkedHashMap<>();
-        for (GraphMorphism ep : localQueryResults.keySet()) {
-            cursors.put(ep, objectMapper.readTree(localQueryResults.get(ep)).get("data")); // TODO local error handling?
+        LocalDateTime localQRepsParse = LocalDateTime.now();
+        Map<Sys, JsonNode> globalResults = new LinkedHashMap<>();
+        for (Sys ep : localQueryResults.keySet()) {
+            JsonNode jsonNode = getObjectMapper().readTree(localQueryResults.get(ep)).get("data");
+            globalResults.put(ep, jsonNode);
         }
-        new TraverseStep(cursors,
-                TraversePosition.MERGED_OBJECT,
-                generator,
-                originalQuery.root()).advance();
+        LocalDateTime localQRepsParseStop = LocalDateTime.now();
+        System.out.println("Parsing Response from local Query: " + Duration.between(localQRepsParse, localQRepsParseStop).toMillis() + " ms");
 
+        LocalDateTime startMerge = LocalDateTime.now();
+        for (GraphQLQuery.QueryRoot queryRoot : originalQuery.getRoots()) {
+            Map<String, JsonNode> paramMap = new LinkedHashMap<>();
+            for (Sys endpoint : globalResults.keySet()) {
+                paramMap.put(endpoint.url(), globalResults.get(endpoint));
+            }
+            QueryCursor.ConcatCursor cursor = (QueryCursor.ConcatCursor) queryRoot.getCursor().get();
+            cursor.addResults(paramMap);
+            cursor.processOne(generator);
+        }
+        LocalDateTime finishMerge = LocalDateTime.now();
+        System.out.println("Merging Query Response: " + Duration.between(startMerge, finishMerge).toMillis() + " ms");
+
+
+//        for (QueryNode.Root root : originalQuery.queryRoots().collect(Collectors.toList())) {
+//            boolean hasResult = false;
+//
+//            Map<Sys, JsonNode> cursors = new LinkedHashMap<>();
+//            for (Sys ep : localQueryResults.keySet()) {
+//                LocalDateTime localQRepsParse = LocalDateTime.now();
+//                JsonNode jsonNode = getObjectMapper().readTree(localQueryResults.get(ep)).get("data");
+//                LocalDateTime localQRepsParseStop = LocalDateTime.now();
+//                System.out.println("Parsing Response from local Query: " + Duration.between(localQRepsParse, localQRepsParseStop).toMillis() + " ms");
+//
+//                for (Name localName : comprSys.localNames(ep, root.messageType()).collect(Collectors.toList())) {
+//                    String field = ep.displayName(localName);
+//                    if (jsonNode.get(field) != null) {
+//                        cursors.put(ep, jsonNode.get(field));
+//                        hasResult = true;
+//                    }
+//                }
+//            }
+//            if (hasResult) {
+//                generator.writeFieldName(root.branchName().print(PrintingStrategy.IGNORE_PREFIX));
+//                LocalDateTime mergeStart = LocalDateTime.now();
+//
+//                new TraverseStep(cursors,
+//                        TraversePosition.MERGED_OBJECT_CONCAT_ARRAY, // TODO check for keys
+//                        generator,
+//                        root.asEdge()).advance();
+//                LocalDateTime meregStop = LocalDateTime.now();
+//                System.out.println("Merging results: " + Duration.between(mergeStart, meregStop).toMillis() + " ms");
+//
+//
+//            } else {
+//                generator.writeFieldName(root.branchName().print(PrintingStrategy.IGNORE_PREFIX));
+//                generator.writeNull();
+//            }
+//        }
+        generator.writeEndObject();
         generator.writeEndObject();
         generator.flush();
+        System.out.println(wiretap.getRecorded());
+
         outputStream.close();
     }
 
 
-    public Map<GraphMorphism, InputStream> executeQueries(Map<GraphMorphism, GraphQLQuery> localQueries)  throws IOException {
-        Map<GraphMorphism, InputStream> localQueryResults = new LinkedHashMap<>();
-        for (GraphMorphism ep : localQueries.keySet()) {
-            if (handlerMap.containsKey(ep)) {
-                localQueryResults.put(ep, handlerMap.get(ep).resolveAsStream(localQueries.get(ep)));
+    private Map<Sys, InputStream> executeQueries(Map<Sys, GraphQLQuery> localQueries)  throws IOException {
+        LocalDateTime qSendStart = LocalDateTime.now();
+        Map<Sys, InputStream> localQueryResults = new LinkedHashMap<>();
+        for (Sys ep : localQueries.keySet()) {
+            if (localHandlers.containsKey(ep)) {
+                localQueryResults.put(ep, localHandlers.get(ep).resolveAsStream(localQueries.get(ep)));
             }
         }
+        LocalDateTime qSendEnd = LocalDateTime.now();
+        System.out.println("Local Query Request/Response: " + Duration.between(qSendStart, qSendEnd).toMillis() + " ms");
+
         return localQueryResults;
     }
 
 
-    public Map<GraphMorphism, GraphQLQuery> split(GraphQLQuery query) {
-        Map<GraphMorphism, GraphQLQuery> localQueries = new LinkedHashMap<>();
-        for (GraphMorphism ep : this.handlerMap.keySet()) {
-            GraphQLQuery localQuery = new GraphQLQuery(buildLocalQuery(new GraphQLQueryNode.Builder(query.root().getField()), query.root(), ep));
-            localQueries.put(ep, localQuery);
-            logger.debug("Local Query will be sent to " + handlerMap.get(ep).endpointUrl() + ", query content:\n" + localQuery.serialize(handlerMap.get(ep).plainNames()));
-        }
-        Set<GraphMorphism> toDelete = new HashSet<>();
-        for (GraphMorphism ep : localQueries.keySet()) {
-            if (localQueries.get(ep).root().getChildren().isEmpty()) {
-                logger.debug("Local Query to " + handlerMap.get(ep).endpointUrl() + " will be skipped since it empty!");
-                toDelete.add(ep);
-            }
-        }
-        for (GraphMorphism m : toDelete) {
-            localQueries.remove(m);
-        }
-        return localQueries;
+    public Map<Sys, GraphQLQuery> split(GraphQLQuery query) {
+        LocalDateTime splitStart = LocalDateTime.now();
+        Map<Sys, GraphQLQuery> result =  query.split(comprSys, new ArrayList<>(this.localHandlers.keySet()));
+        LocalDateTime splitEnd = LocalDateTime.now();
+        System.out.println("Query Splitting: " + Duration.between(splitStart, splitEnd).toMillis() + " ms");
+        return result;
     }
 
-    private GraphQLQueryNode.Builder buildLocalQuery(
-            GraphQLQueryNode.Builder builder,
-            GraphQLQueryNode node,
-            GraphMorphism morphism) {
 
-        for (GraphQLQueryNode child : node.getChildren()) {
-            Optional<Triple> original = morphism.selectByLabel(child.getField()).findAny();
-            if (original.isPresent()) {
-                GraphQLQueryNode.Builder childBuilder = builder.startChild(original.get().getLabel());
-                buildLocalQuery(childBuilder, child, morphism);
-            }
-        }
 
-        return builder;
+
+    public static GraphQLQueryHandler create(
+            ObjectMapper objectMapper,
+            JsonFactory factory,
+            ComprSys comprSys,
+            LinkedHashMap<Sys, QueryHandler> handlerMap) throws IOException {
+        // writing schema
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        GraphQLSchemaWriter schemaWriter = new GraphQLSchemaWriter();
+        comprSys.schema().accept(schemaWriter);
+        BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(bos));
+        schemaWriter.printToBuffer(bufferedWriter);
+        bufferedWriter.flush();
+        bufferedWriter.close();
+
+        // building GraphQL engine
+        TypeDefinitionRegistry typeReg = new SchemaParser().parse(bos.toString("UTF-8"));
+        RuntimeWiring.Builder builder = RuntimeWiring.newRuntimeWiring();
+        RuntimeWiring runtimeWiring = builder.build();
+        GraphQLSchema executableSchema = new SchemaGenerator().makeExecutableSchema(typeReg, runtimeWiring);
+        GraphQL graphQL = GraphQL.newGraphQL(executableSchema).build();
+
+        GraphQLEndpoint endpoint = new GraphQLEndpoint(
+                comprSys.url(),
+                comprSys.schema(),
+                schemaWriter.getNameToText(),
+                schemaWriter.getMults(),
+                comprSys.messages().filter(m -> m instanceof QueryMesage).map(m -> (QueryMesage) m).collect(Collectors.toSet()),
+                comprSys.messages().filter(m -> m instanceof MutationMessage).map(m -> (MutationMessage) m).collect(Collectors.toSet()),
+                objectMapper,
+                factory);
+        return new GraphQLQueryDivider(comprSys, handlerMap, graphQL, endpoint);
     }
 }

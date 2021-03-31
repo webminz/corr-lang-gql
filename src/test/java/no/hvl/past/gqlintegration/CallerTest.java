@@ -2,27 +2,15 @@ package no.hvl.past.gqlintegration;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import graphql.ExecutionResult;
-import graphql.GraphQL;
-import graphql.schema.GraphQLSchema;
-import graphql.schema.idl.*;
-import no.hvl.past.gqlintegration.caller.GraphQLCaller;
-import no.hvl.past.gqlintegration.caller.GraphQLCallerFactory;
 import no.hvl.past.gqlintegration.queries.GraphQLQuery;
-import no.hvl.past.gqlintegration.queries.GraphQLQueryDelegator;
-import no.hvl.past.gqlintegration.queries.GraphQLQueryHandler;
-import no.hvl.past.gqlintegration.queries.GraphQLQueryNode;
-import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
-import no.hvl.past.gqlintegration.server.DynamicQueryResolver;
-import no.hvl.past.gqlintegration.server.JsonDataFetcher;
-import no.hvl.past.graph.GraphError;
-import no.hvl.past.graph.Sketch;
+import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.trees.QueryHandler;
 import no.hvl.past.graph.trees.QueryTree;
 import no.hvl.past.names.Name;
+import no.hvl.past.plugin.UnsupportedFeatureException;
+import no.hvl.past.systems.Sys;
 import no.hvl.past.techspace.TechSpaceException;
 import org.junit.Test;
 
@@ -30,7 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Map;
+import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -38,20 +26,21 @@ import static org.junit.Assert.assertTrue;
 public class CallerTest extends GraphQLTest {
 
     @Test
-    public void testCalling() throws IOException, TechSpaceException {
-        GraphQLQuery query = new GraphQLQuery(
-                new GraphQLQueryNode.Builder(Name.identifier("query"))
-                        .startChild(Name.identifier("customers"))
-                            .startChild(Name.identifier("id"))
-                            .endChild()
-                            .startChild(Name.identifier("name"))
-                            .endChild()
-                        .endChild());
+    public void testCalling() throws IOException, TechSpaceException, UnsupportedFeatureException {
+
 
         GraphQLAdapter adapter = createAdapter();
-        Sketch schema = adapter.parseSchema(Name.identifier("Sales"), "http://localhost:4011");
+        Sys schema = adapter.parseSchema(Name.identifier("Sales"), "http://localhost:4011");
 
-        QueryHandler queryHandler = adapter.queryHandler( "http://localhost:4011",null);
+        GraphQLQuery.Node id = new GraphQLQuery.Node("id", Name.identifier("ID"));
+        GraphQLQuery.Node name = new GraphQLQuery.Node("name", Name.identifier("String"));
+        GraphQLQuery.QueryRoot customers = new GraphQLQuery.QueryRoot("customers", false, Triple.edge(Name.identifier("Query.customers"), Name.identifier("result").prefixWith(Name.identifier("Query.customers")), Name.identifier("Customer")));
+        customers.addChild(id, Triple.edge(Name.identifier("Customer"), Name.identifier("id").prefixWith(Name.identifier("Customer")), Name.identifier("ID")),false, false);
+        customers.addChild(name, Triple.edge(Name.identifier("Customer"), Name.identifier("name").prefixWith(Name.identifier("Customer")), Name.identifier("String")), false, false);
+        GraphQLQuery query = new GraphQLQuery(Collections.singletonList(customers), schema.schema(), Name.anonymousIdentifier());
+
+
+        QueryHandler queryHandler = adapter.queryHandler( schema);
 
         InputStream inputStream = queryHandler.resolveAsStream(query);
 
@@ -60,17 +49,17 @@ public class CallerTest extends GraphQLTest {
 
 
         assertTrue(jsonNode.isObject());
-        JsonNode customers = jsonNode.get("customers");
-        assertTrue(customers.isArray());
-        String name = customers.get(0).get("name").asText();
-        assertEquals("Ban Geyton", name);
+        JsonNode customersResult = jsonNode.get("customers");
+        assertTrue(customersResult.isArray());
+        String nameResult = customersResult.get(0).get("name").asText();
+        assertEquals("Ban Geyton", nameResult);
     }
 
 
     @Test
-    public void testQueryParsing() throws IOException, TechSpaceException {
+    public void testQueryParsing() throws IOException, TechSpaceException, UnsupportedFeatureException {
         GraphQLAdapter adapter = createAdapter();
-        Sketch schema = adapter.parseSchema(Name.identifier("Sales"), "http://localhost:4011");
+        Sys schema = adapter.parseSchema(Name.identifier("Sales"), "http://localhost:4011");
         String q = "query {\n" +
                 "  customers {\n" +
                 "    id  \n" +
@@ -84,18 +73,18 @@ public class CallerTest extends GraphQLTest {
         generator.writeString(q);
         generator.writeEndObject();
         generator.flush();
-        QueryHandler queryHandler = adapter.queryHandler( "http://localhost:4011", null);
-        QueryTree actual = queryHandler.parse(new ByteArrayInputStream(bos.toByteArray()));
+        QueryHandler queryHandler = adapter.queryHandler( schema);
+        QueryTree actual = (QueryTree) queryHandler.deserialize(new ByteArrayInputStream(bos.toByteArray()));
 
-        GraphQLQuery expected = new GraphQLQuery(
-                new GraphQLQueryNode.Builder(Name.identifier("query"))
-                        .startChild(Name.identifier("customers"))
-                        .startChild(Name.identifier("id"))
-                        .endChild()
-                        .startChild(Name.identifier("name"))
-                        .endChild()
-                        .endChild());
 
+        GraphQLQuery.Node id = new GraphQLQuery.Node("id", Name.identifier("ID"));
+        GraphQLQuery.Node name = new GraphQLQuery.Node("name", Name.identifier("String"));
+        GraphQLQuery.QueryRoot customers = new GraphQLQuery.QueryRoot("customers", false, Triple.edge(Name.identifier("Query.customers"), Name.identifier("result").prefixWith(Name.identifier("Query.customers")), Name.identifier("Customer")));
+        customers.addChild(id, Triple.edge(Name.identifier("Customer"), Name.identifier("id").prefixWith(Name.identifier("Customer")), Name.identifier("ID")), false, false);
+        customers.addChild(name, Triple.edge(Name.identifier("Customer"), Name.identifier("name").prefixWith(Name.identifier("Customer")), Name.identifier("String")), false, false);
+        GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(customers), schema.schema(), Name.anonymousIdentifier());
+
+        assertEquals(expected, actual);
         assertEquals(expected.textualRepresentation(), actual.textualRepresentation());
     }
 
