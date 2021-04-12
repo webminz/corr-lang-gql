@@ -53,6 +53,87 @@ public class TestExternalSchemas extends GraphQLTest {
 
         assertEquals(Name.identifier("PersonsType"), result.get().getTarget());
 
+
+
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        adapter.writeSchema(ke, bos);
+
+        String expected = "type Query {\n" +
+                "   person(id : Int) : PersonsType\n" +
+                "   persons : [PersonsType]\n" +
+                "   relation(id : Int) : PersonalRelationsType\n" +
+                "   relations : [PersonalRelationsType]\n" +
+                "}\n" +
+                "\n" +
+                "type Mutation {\n" +
+                "   addRelation(relation : AddPersonalRelationsInput!) : PersonalRelationsType\n" +
+                "   createPerson(person : AddPersonInput!) : PersonsType\n" +
+                "   deletePerson(personId : ID!) : String\n" +
+                "   deleteRelation(relationId : ID!) : String\n" +
+                "   updatePerson(person : AddPersonInput!, personId : ID!) : PersonsType\n" +
+                "   updateRelation(relation : AddPersonalRelationsInput!, relationId : ID!) : PersonalRelationsType\n" +
+                "}\n" +
+                "\n" +
+                "scalar Date\n" +
+                "\n" +
+                "scalar DateTime\n" +
+                "\n" +
+                "enum RelationshipType {\n" +
+                "   DAUGHTER\n" +
+                "   FATHER\n" +
+                "   SON\n" +
+                "   SISTER\n" +
+                "   BROTHER\n" +
+                "   MOTHER\n" +
+                "   PARTNER\n" +
+                "}\n" +
+                "\n" +
+                "type PersonalRelationsType {\n" +
+                "   relativeId : ID\n" +
+                "   relationType : RelationshipType\n" +
+                "   reverseRelationType : RelationshipType\n" +
+                "   id : ID\n" +
+                "   person : PersonsType\n" +
+                "   relative : PersonsType\n" +
+                "   personId : ID\n" +
+                "}\n" +
+                "\n" +
+                "type PersonsType {\n" +
+                "   natIdNr : String!\n" +
+                "   sex : String!\n" +
+                "   personalRelations : [PersonalRelationsType]\n" +
+                "   dateOfDeath : DateTime\n" +
+                "   email : String!\n" +
+                "   nationality : String!\n" +
+                "   lastName : String!\n" +
+                "   address : String!\n" +
+                "   id : ID\n" +
+                "   firstName : String!\n" +
+                "   dateOfBirth : DateTime!\n" +
+                "}\n" +
+                "\n" +
+                "input AddPersonInput {\n" +
+                "   dateOfDeath : Date\n" +
+                "   nationality : String\n" +
+                "   natIdNr : String\n" +
+                "   dateOfBirth : Date\n" +
+                "   email : String\n" +
+                "   firstName : String\n" +
+                "   address : String\n" +
+                "   lastName : String\n" +
+                "   sex : String\n" +
+                "}\n" +
+                "\n" +
+                "input AddPersonalRelationsInput {\n" +
+                "   relativeId : Int!\n" +
+                "   relationType : String\n" +
+                "   reverseRelationType : String\n" +
+                "   personId : Int!\n" +
+                "}\n\n";
+
+        assertEquals(expected, bos.toString("UTF-8"));
+
+
     }
 
 

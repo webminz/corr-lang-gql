@@ -395,7 +395,7 @@ public class GraphQLSchemaWriter implements Visitor {
                 });
             } else if (DataTypePredicate.class.isAssignableFrom(graphFormula.getClass())) {
                 diagram.nodeBinding().ifPresent(typ -> {
-                    if (typ.equals(Name.identifier("ID"))) {
+                    if (!typ.equals(Name.identifier("ID"))) {
                         if (typeMap.containsKey(typ)) {
                             Container container = typeMap.get(typ);
                             container.type = ContainerType.SCALAR;
