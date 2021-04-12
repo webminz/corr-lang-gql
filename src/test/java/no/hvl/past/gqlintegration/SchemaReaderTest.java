@@ -10,6 +10,7 @@ import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
+import no.hvl.past.gqlintegration.predicates.InputType;
 import no.hvl.past.gqlintegration.predicates.MutationMessage;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.graph.*;
@@ -304,6 +305,35 @@ public class SchemaReaderTest extends GraphQLTest {
         assertsAboutSalesSchema(s.schema());
     }
 
+
+    @Test
+    public void testInputTypes() throws UnsupportedFeatureException, GraphError {
+        String content = "type Query {\n" +
+                "\tcreateCustomer(data: CustomerData): Customer\n" +
+                "}\n" +
+                "\n" +
+                "type Customer {\n" +
+                "\tid: ID!\n" +
+                "\tname: String!\n" +
+                "\temail: String\n" +
+                "\tage: Int\n" +
+                "}\n" +
+                "\n" +
+                "input CustomerData {\n" +
+                "\tname: String!\n" +
+                "\temail: String\n" +
+                "\tage: Int\n" +
+                "}\n";
+
+        TypeDefinitionRegistry parse = new SchemaParser().parse(content);
+        GraphQLSchema graphQLSchema = new SchemaGenerator().makeExecutableSchema(parse, RuntimeWiring.newRuntimeWiring().build());
+
+        GraphQLSchemaReader converter = new GraphQLSchemaReader(new UniverseImpl(UniverseImpl.EMPTY));
+        Sketch result = converter.convert(Name.anonymousIdentifier(), graphQLSchema);
+        assertEquals(3, result.carrier().outgoing(Name.identifier("CustomerData")).filter(Triple::isEddge).count());
+
+        assertTrue(result.diagramsOn(Triple.node(Name.identifier("CustomerData"))).anyMatch(d -> d.label() instanceof InputType));
+    }
 
 
 }

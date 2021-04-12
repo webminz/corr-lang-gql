@@ -2,6 +2,7 @@ package no.hvl.past.gqlintegration.schema;
 
 import com.google.common.collect.Sets;
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
+import no.hvl.past.gqlintegration.predicates.InputType;
 import no.hvl.past.gqlintegration.predicates.MutationMessage;
 import no.hvl.past.graph.*;
 import no.hvl.past.graph.elements.Triple;
@@ -65,7 +66,8 @@ public class GraphQLSchemaWriter implements Visitor {
         ENUM,
         HIDDEN,
         INTERFACE,
-        UNION
+        UNION,
+        INPUT
     }
 
 
@@ -105,6 +107,17 @@ public class GraphQLSchemaWriter implements Visitor {
 
                     case ENUM:
                         writer.append("enum ");
+                        writer.append(displayName);
+                        writer.append(" {\n");
+                        for (ContainerChild f : fields) {
+                            f.print(writer,typeMap, new HashMap<>());
+                            writer.newLine();
+                        }
+                        writer.append("}\n");
+                        break;
+
+                    case INPUT:
+                        writer.append("input ");
                         writer.append(displayName);
                         writer.append(" {\n");
                         for (ContainerChild f : fields) {
@@ -168,9 +181,6 @@ public class GraphQLSchemaWriter implements Visitor {
                     if (isBuiltinBasType(current.getTypeName())) {
                         writer.append(getBuiltinBaseType(current.getTypeName()));
                     } else {
-                        if (!typeMap.containsKey(current.getTypeName())) {
-                            System.out.println(current.getTypeName().print(PrintingStrategy.DETAILED));
-                        }
                         writer.append(typeMap.get(current.getTypeName()).displayName);
                     }
                     if (current.isListValued()) {
@@ -424,8 +434,10 @@ public class GraphQLSchemaWriter implements Visitor {
                         container.fields.add(new ContainerChild(literal, container.node));
                     }
                 });
-
-
+            } else if (InputType.class.isAssignableFrom(graphFormula.getClass())) {
+                diagram.nodeBinding().ifPresent(typ -> {
+                    typeMap.get(typ).type = ContainerType.INPUT;
+                });
             }
         }
     }
@@ -499,6 +511,7 @@ public class GraphQLSchemaWriter implements Visitor {
         typeMap.values().stream().filter(c -> c.type.equals(ContainerType.SCALAR)).sorted(comparator).forEach(finalList::add);
         typeMap.values().stream().filter(c -> c.type.equals(ContainerType.ENUM)).sorted(comparator).forEach(finalList::add);
         typeMap.values().stream().filter(c -> c.type.equals(ContainerType.OBJECT)).sorted(comparator).forEach(finalList::add);
+        typeMap.values().stream().filter(c -> c.type.equals(ContainerType.INPUT)).sorted(comparator).forEach(finalList::add);
 
     }
 
@@ -506,10 +519,15 @@ public class GraphQLSchemaWriter implements Visitor {
         Set<ContainerChild> duplicateFields = StreamExt.stream(c.fields).withDuplicateProperty(child -> child.displayName).collect(Collectors.toSet());
         for (ContainerChild duplicateField : duplicateFields) {
             if (duplicateField.edgeLabel.unprefixAll().print(PrintingStrategy.IGNORE_PREFIX).contains(".")) {
-                Prefix pref = (Prefix) duplicateField.edgeLabel;
-                Name prefixName = pref.getPrefix().get();
-                Name wrapped = pref.unprefixAll();
-                duplicateField.displayName = duplicateField.displayName + "_" + prefixName.print(p);
+                if (duplicateField.edgeLabel instanceof Prefix) {
+                    Prefix pref = (Prefix) duplicateField.edgeLabel;
+                    Name prefixName = pref.getPrefix().get();
+                    duplicateField.displayName = duplicateField.displayName + "_" + prefixName.print(p);
+                } else {
+                    String t = duplicateField.edgeLabel.unprefixAll().printRaw();
+                    String[] split = t.split("\\.");
+                    duplicateField.displayName = split[1] + "_" + split[0];
+                }
 
             } else {
                 duplicateField.displayName = StringUtils.lowerCaseFirst(duplicateField.edgeLabel.print(p));

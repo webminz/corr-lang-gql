@@ -13,6 +13,7 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.hvl.past.attributes.TypedVariables;
 import no.hvl.past.gqlintegration.queries.GraphQLQuery;
+import no.hvl.past.gqlintegration.schema.StubWiring;
 import no.hvl.past.graph.Graph;
 import no.hvl.past.graph.GraphImpl;
 import no.hvl.past.graph.elements.Triple;
@@ -167,7 +168,7 @@ public class IntrospectionQuery implements QueryTree {
         final SchemaParser parser = new SchemaParser();
         final TypeDefinitionRegistry schema = parser.buildRegistry(document);
         final SchemaGenerator generator = new SchemaGenerator();
-        return generator.makeExecutableSchema(schema, RuntimeWiring.newRuntimeWiring().build());
+        return generator.makeExecutableSchema(schema, StubWiring.createWiring(schema));
     }
 
     private JsonNode executeQuery(final String endpoint, final String query) throws IOException {

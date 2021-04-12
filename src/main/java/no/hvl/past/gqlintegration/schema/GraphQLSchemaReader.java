@@ -4,10 +4,7 @@ package no.hvl.past.gqlintegration.schema;
 
 import graphql.schema.*;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
-import no.hvl.past.gqlintegration.predicates.FieldArgument;
-import no.hvl.past.gqlintegration.predicates.GraphQLMessage;
-import no.hvl.past.gqlintegration.predicates.MutationMessage;
-import no.hvl.past.gqlintegration.predicates.QueryMesage;
+import no.hvl.past.gqlintegration.predicates.*;
 import no.hvl.past.graph.*;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.predicates.*;
@@ -32,6 +29,14 @@ public class GraphQLSchemaReader {
 
     public Set<MutationMessage> getMuations() {
         return this.mutationMessages;
+    }
+
+    public String getQueryTypeName() {
+        return this.queryTypeName;
+    }
+
+    public String getMutationTypeName() {
+        return this.mutationTypeName;
     }
 
     private static class MessageType {
@@ -74,6 +79,9 @@ public class GraphQLSchemaReader {
     private List<MessageType> messageTypes;
     private Set<QueryMesage> queryMesages = new LinkedHashSet<>();
     private Set<MutationMessage> mutationMessages = new LinkedHashSet<>();
+    private Set<GraphQLInputObjectType> inputTypes = new LinkedHashSet<>();
+    private String queryTypeName = "Query";
+    private String mutationTypeName = "Mutation";
 
     public GraphQLSchemaReader(Universe universe) {
         this.builders = new GraphBuilders(universe, false, false);
@@ -126,6 +134,11 @@ public class GraphQLSchemaReader {
             }
 
 
+            if (type instanceof GraphQLInputObjectType) {
+                GraphQLInputObjectType inputType = (GraphQLInputObjectType) type;
+                this.inputTypes.add(inputType);
+            }
+
             // TODO unions
             if (type instanceof GraphQLUnionType) {
                 throw new UnsupportedFeatureException("Union types such as '" + type.getName() + "' are currently not supported by the GraphQL plugin!");
@@ -146,13 +159,25 @@ public class GraphQLSchemaReader {
             }
         }
 
+        for (GraphQLInputObjectType inputType : inputTypes) {
+            for (GraphQLInputObjectField field : inputType.getFieldDefinitions()) {
+                convertField(field, inputType);
+            }
+        }
+
         if (schema.getQueryType() != null) {
+            if (!this.queryTypeName.equals(schema.getQueryType().getName())) {
+                this.queryTypeName = schema.getQueryType().getName();
+            }
             for (GraphQLFieldDefinition querOp : schema.getQueryType().getFieldDefinitions()) {
                 convertMessage(querOp, false, schema.getQueryType().getName());
             }
         }
 
         if (schema.getMutationType() != null) {
+            if (!this.mutationTypeName.equals(schema.getMutationType().getName())) {
+                this.mutationTypeName = schema.getMutationType().getName();
+            }
             for (GraphQLFieldDefinition querOp : schema.getMutationType().getFieldDefinitions()) {
                 convertMessage(querOp, true, schema.getMutationType().getName());
             }
@@ -210,6 +235,12 @@ public class GraphQLSchemaReader {
             builders.endDiagram(Name.identifier("Enum").appliedTo(enm.getKey()));
         }
 
+        for (GraphQLInputObjectType in : inputTypes) {
+            builders.startDiagram(InputType.getInstance());
+            builders.map(Universe.ONE_NODE_THE_NODE, typeMapping.get(in));
+            builders.endDiagram(Name.identifier("InputType").appliedTo(Name.identifier(in.getName())));
+        }
+
         for (Pair<GraphQLArgument, Triple> a : arguments) {
             this.convertArgument(a.getFirst(), a.getSecond());
         }
@@ -223,10 +254,10 @@ public class GraphQLSchemaReader {
             List<MessageArgument> args = new ArrayList<>();
             GraphQLMessage msg;
             if (msgType.hasSideEffect) {
-               msg = new MutationMessage(result.carrier(), msgType.name, schema.getQueryType().getName(), this.nameToText.get(msgType.name), args);
-                this.mutationMessages.add((MutationMessage) msg);
+                   msg = new MutationMessage(result.carrier(), msgType.name, schema.getMutationType().getName(), this.nameToText.get(msgType.name), args);
+                   this.mutationMessages.add((MutationMessage) msg);
             } else {
-              msg =  new QueryMesage(result.carrier(), msgType.name,schema.getMutationType().getName(), this.nameToText.get(msgType.name), args);
+                msg = new QueryMesage(result.carrier(), msgType.name, schema.getQueryType().getName(), this.nameToText.get(msgType.name), args);
                 this.queryMesages.add((QueryMesage) msg);
             }
             ListIterator<Triple> iterator = msgType.arguments.listIterator();
@@ -311,6 +342,22 @@ public class GraphQLSchemaReader {
         }
     }
 
+    private void convertField(GraphQLInputObjectField field, GraphQLInputObjectType owner) {
+        this.mandatory = false;
+        this.listValued = false;
+
+        Name fieldName = createName(owner, field);
+
+        GraphQLInputType resultType = field.getType();
+        Name targetName = this.convertResultType(resultType);
+
+        final Triple edge = Triple.edge(this.typeMapping.get(owner), fieldName, targetName);
+        this.builders.edge(this.typeMapping.get(owner), fieldName, targetName); // TODO builder method that accepts an edge
+        this.edges.add(edge);
+        this.multiplicities.add(new FieldMult(fieldName, listValued, mandatory));
+
+    }
+
 
     private void convertField(final GraphQLFieldDefinition fieldDefinition, final GraphQLType owner) {
         this.mandatory = false;
@@ -360,6 +407,13 @@ public class GraphQLSchemaReader {
 
     public List<FieldMult> getMultiplicities() {
         return multiplicities;
+    }
+
+    private Name createName(GraphQLInputObjectType owner, GraphQLInputObjectField field) {
+        Name name = Name.identifier(field.getName()).prefixWith(this.typeMapping.get(owner));
+        this.nameToText.put(name, field.getName());
+        return name;
+
     }
 
     private Name createName(GraphQLType owner, GraphQLFieldDefinition fieldDefinition) {

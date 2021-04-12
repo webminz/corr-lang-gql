@@ -1,6 +1,7 @@
 package no.hvl.past.gqlintegration;
 
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
+import no.hvl.past.gqlintegration.predicates.InputType;
 import no.hvl.past.gqlintegration.predicates.QueryMesage;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.graph.GraphBuilders;
@@ -257,6 +258,45 @@ public class SchemaWriterTest extends GraphQLTest {
 
         testExpectedSchema(sketch,expected);
     }
+
+
+    @Test
+    public void testWriteInputTypes() throws GraphError, IOException {
+        Sketch sketch = contextCreatingBuilder()
+                .node("Data")
+                .edge(Name.identifier("Data"), Name.identifier("name").prefixWith(Name.identifier("Data")), Name.identifier("String"))
+                .edge(Name.identifier("Data"), Name.identifier("email").prefixWith(Name.identifier("Data")), Name.identifier("String"))
+                .edge(Name.identifier("Data"), Name.identifier("age").prefixWith(Name.identifier("Data")), Name.identifier("Int"))
+                .graph(Name.anonymousIdentifier())
+                .startDiagram(InputType.getInstance())
+                .map(Universe.ONE_NODE_THE_NODE, Name.identifier("Data"))
+                .endDiagram(Name.anonymousIdentifier())
+                .startDiagram(TargetMultiplicity.getInstance(1, 1))
+                .map(Universe.ARROW_SRC_NAME, Name.identifier("Data"))
+                .map(Universe.ARROW_LBL_NAME, Name.identifier("name").prefixWith(Name.identifier("Data")))
+                .map(Universe.ARROW_TRG_NAME, Name.identifier("String"))
+                .endDiagram(Name.anonymousIdentifier())
+                .startDiagram(TargetMultiplicity.getInstance(0, 1))
+                .map(Universe.ARROW_SRC_NAME, Name.identifier("Data"))
+                .map(Universe.ARROW_LBL_NAME, Name.identifier("email").prefixWith(Name.identifier("Data")))
+                .map(Universe.ARROW_TRG_NAME, Name.identifier("String"))
+                .endDiagram(Name.anonymousIdentifier())
+                .startDiagram(TargetMultiplicity.getInstance(0, 1))
+                .map(Universe.ARROW_SRC_NAME, Name.identifier("Data"))
+                .map(Universe.ARROW_LBL_NAME, Name.identifier("age").prefixWith(Name.identifier("Data")))
+                .map(Universe.ARROW_TRG_NAME, Name.identifier("Int"))
+                .endDiagram(Name.anonymousIdentifier())
+                .sketch(Name.identifier("A"))
+                .getResult(Sketch.class);
+        String expected = "input Data {\n" +
+                "   name : String!\n" +
+                "   age : Int\n" +
+                "   email : String\n" +
+                "}\n\n";
+        testExpectedSchema(sketch,expected);
+    }
+
+
 
     @Test
     public void testDuplicateFieldArguments() {

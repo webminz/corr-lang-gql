@@ -515,7 +515,9 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
                 comprSys.messages().filter(m -> m instanceof QueryMesage).map(m -> (QueryMesage) m).collect(Collectors.toSet()),
                 comprSys.messages().filter(m -> m instanceof MutationMessage).map(m -> (MutationMessage) m).collect(Collectors.toSet()),
                 objectMapper,
-                factory);
+                factory,
+                "Query",
+                "Mutation");
         return new GraphQLQueryDivider(comprSys, handlerMap, graphQL, endpoint);
     }
 }

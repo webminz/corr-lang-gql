@@ -14,6 +14,7 @@ import no.hvl.past.gqlintegration.queries.GraphQLQueryDelegator;
 import no.hvl.past.gqlintegration.queries.GraphQLQueryHandler;
 import no.hvl.past.gqlintegration.schema.FieldMult;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
+import no.hvl.past.gqlintegration.schema.StubWiring;
 import no.hvl.past.graph.GraphError;
 import no.hvl.past.graph.GraphMorphism;
 import no.hvl.past.graph.Sketch;
@@ -43,6 +44,9 @@ public class GraphQLEndpoint extends Sys.Impl {
     private JsonFactory jsonFactory;
     private Set<QueryMesage> queries;
     private Set<MutationMessage> mutations;
+    private String queryTypeName;
+    private String mutationTyupeName;
+
 
     public GraphQLEndpoint(
             String url,
@@ -52,8 +56,10 @@ public class GraphQLEndpoint extends Sys.Impl {
             Set<QueryMesage> queries,
             Set<MutationMessage> mutations,
             ObjectMapper objectMapper,
-            JsonFactory jsonFactory) {
-        super(url, schema);
+            JsonFactory jsonFactory,
+            String queryTypeName,
+            String mutationTypeName) {
+        super(url, schema, displayNames);
         this.displayNames = displayNames;
         this.objectMapper = objectMapper;
         this.jsonFactory = jsonFactory;
@@ -63,6 +69,8 @@ public class GraphQLEndpoint extends Sys.Impl {
         }
         this.queries = queries;
         this.mutations = mutations;
+        this.queryTypeName = queryTypeName;
+        this.mutationTyupeName = mutationTypeName;
     }
 
     public Optional<Triple> lookupField(Name owner, String fieldNameAsString) {
@@ -148,7 +156,7 @@ public class GraphQLEndpoint extends Sys.Impl {
         if (path.length == 0) {
             return Optional.empty();
         }
-        if (path[0].equals("Query") || path[0].equals("Mutation")) {
+        if (path[0].equals(queryTypeName) || path[0].equals(mutationTyupeName)) {
             if (path.length == 1) {
                 return Optional.empty();
             }
@@ -192,7 +200,7 @@ public class GraphQLEndpoint extends Sys.Impl {
             // local file
             File file = new File(new URI(url));
             TypeDefinitionRegistry registry = new SchemaParser().parse(file);
-            GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(registry, RuntimeWiring.newRuntimeWiring().build());
+            GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(registry, StubWiring.createWiring(registry));
             sketch = reader.convert(name, schema);
         } else {
             // introspection query
@@ -206,7 +214,9 @@ public class GraphQLEndpoint extends Sys.Impl {
                 reader.getMultiplicities() ,
                 reader.getQueries(),
                 reader.getMuations(),
-                objectMapper, jsonFactory);
+                objectMapper,
+                jsonFactory
+        ,reader.getQueryTypeName(), reader.getMutationTypeName());
 
     }
 
