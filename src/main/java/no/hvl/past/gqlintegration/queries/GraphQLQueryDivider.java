@@ -19,6 +19,7 @@ import no.hvl.past.gqlintegration.predicates.MutationMessage;
 import no.hvl.past.gqlintegration.predicates.QueryMesage;
 import no.hvl.past.gqlintegration.schema.FieldMult;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
+import no.hvl.past.gqlintegration.schema.StubWiring;
 import no.hvl.past.graph.GraphMorphism;
 import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.elements.Triple;
@@ -502,9 +503,8 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
 
         // building GraphQL engine
         TypeDefinitionRegistry typeReg = new SchemaParser().parse(bos.toString("UTF-8"));
-        RuntimeWiring.Builder builder = RuntimeWiring.newRuntimeWiring();
-        RuntimeWiring runtimeWiring = builder.build();
-        GraphQLSchema executableSchema = new SchemaGenerator().makeExecutableSchema(typeReg, runtimeWiring);
+        RuntimeWiring wiring = StubWiring.createWiring(typeReg);
+        GraphQLSchema executableSchema = new SchemaGenerator().makeExecutableSchema(typeReg, wiring);
         GraphQL graphQL = GraphQL.newGraphQL(executableSchema).build();
 
         GraphQLEndpoint endpoint = new GraphQLEndpoint(
