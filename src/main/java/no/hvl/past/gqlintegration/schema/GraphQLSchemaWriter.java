@@ -16,6 +16,7 @@ import no.hvl.past.systems.MessageArgument;
 import no.hvl.past.systems.MessageType;
 import no.hvl.past.util.StreamExt;
 import no.hvl.past.util.StringUtils;
+import org.apache.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedWriter;
@@ -231,7 +232,11 @@ public class GraphQLSchemaWriter implements Visitor {
     }
 
     private  boolean isBuiltinBasType(Name current) {
-        return stringName.equals(current) || floatName.equals(current) || intName.equals(current) || boolName.equals(current) || idName.equals(current);
+        return stringName.equals(current) ||
+                floatName.equals(current) ||
+                intName.equals(current) ||
+                boolName.equals(current) ||
+                idName.equals(current);
     }
 
     private Map<Name, Container> typeMap = new HashMap<>();
@@ -281,7 +286,7 @@ public class GraphQLSchemaWriter implements Visitor {
         }
 
         if (!ignoreElementsNow) {
-            if (! BUILTIN_SCALARS.contains(node)) {
+            if (! BUILTIN_SCALARS.contains(node.unprefixAll())) {
                 this.typeMap.put(node, new Container(node));
             }
         }
@@ -310,7 +315,13 @@ public class GraphQLSchemaWriter implements Visitor {
 
     private void handleMsgArg(MessageArgument argument) {
         ContainerChild message = createMessageContainerIfNeeded(argument.message());
-        ContainerChild oldRepresentation = this.typeMap.get(argument.message().typeName()).fields.stream().filter(child -> child.edgeLabel.equals(argument.asEdge().getLabel())).findFirst().get();
+        Optional<ContainerChild> oldRepresentationOpt = this.typeMap.get(argument.message().typeName()).fields.stream()
+                .filter(child -> child.edgeLabel.equals(argument.asEdge().getLabel())).findFirst();
+        if (!oldRepresentationOpt.isPresent()) {
+            Logger.getLogger(getClass()).warn("Cannot find '" + argument.message().typeName().printRaw() + "." + argument.asEdge().getLabel().printRaw() + "'");
+            return;
+        }
+        ContainerChild oldRepresentation = oldRepresentationOpt.get();
         if (argument.isInput()) {
             if (argument.argumentOrder() >= message.arguments.size()) {
                 message.arguments.add(new FieldArgument(argument.asEdge().getLabel().print(PrintingStrategy.IGNORE_PREFIX), oldRepresentation.targetName, oldRepresentation.setValued, oldRepresentation.mandatory));
@@ -368,8 +379,11 @@ public class GraphQLSchemaWriter implements Visitor {
 
     @Override
     public void handleDiagram(Diagram diagram) {
-        if (diagram instanceof MessageArgument) {
-            handleMsgArg((MessageArgument) diagram);
+        if (diagram instanceof MessageType) {
+            MessageType messageType = (MessageType) diagram;
+            for (MessageArgument arg : messageType.arguments().collect(Collectors.toList())) {
+                handleMsgArg(arg);
+            }
         } else {
             Formula<Graph> graphFormula = diagram.label();
             GraphMorphism binding = diagram.binding();
@@ -395,11 +409,14 @@ public class GraphQLSchemaWriter implements Visitor {
                 });
             } else if (DataTypePredicate.class.isAssignableFrom(graphFormula.getClass())) {
                 diagram.nodeBinding().ifPresent(typ -> {
-                    if (!typ.equals(Name.identifier("ID"))) {
+                    if (!typ.unprefixAll().equals(Name.identifier("ID"))) {
                         if (typeMap.containsKey(typ)) {
                             Container container = typeMap.get(typ);
                             container.type = ContainerType.SCALAR;
                         }
+                    } else {
+                        baseType(typ, "ID");
+                        idName = typ;
                     }
                 });
 

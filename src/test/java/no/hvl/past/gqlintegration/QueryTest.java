@@ -550,7 +550,7 @@ public class QueryTest  extends GraphQLTest {
                 "    \"invoices\" : [ ],\n" +
                 "    \"worksAt\" : [ ]\n" +
                 "  }, {\n" +
-                "    \"id\" : [ 1 ],\n" +
+                "    \"id\" : [ \"1\" ],\n" +
                 "    \"name\" : null,\n" +
                 "    \"purchases\" : [ ],\n" +
                 "    \"invoices\" : [ ],\n" +
@@ -558,7 +558,7 @@ public class QueryTest  extends GraphQLTest {
                 "      \"name\" : \"Sales\"\n" +
                 "    } ]\n" +
                 "  }, {\n" +
-                "    \"id\" : [ 2 ],\n" +
+                "    \"id\" : [ \"2\" ],\n" +
                 "    \"name\" : null,\n" +
                 "    \"purchases\" : [ ],\n" +
                 "    \"invoices\" : [ ],\n" +
@@ -566,7 +566,7 @@ public class QueryTest  extends GraphQLTest {
                 "      \"name\" : \"Sales\"\n" +
                 "    } ]\n" +
                 "  }, {\n" +
-                "    \"id\" : [ 3 ],\n" +
+                "    \"id\" : [ \"3\" ],\n" +
                 "    \"name\" : null,\n" +
                 "    \"purchases\" : [ ],\n" +
                 "    \"invoices\" : [ ],\n" +
@@ -574,7 +574,7 @@ public class QueryTest  extends GraphQLTest {
                 "      \"name\" : \"IT\"\n" +
                 "    } ]\n" +
                 "  }, {\n" +
-                "    \"id\" : [ 4 ],\n" +
+                "    \"id\" : [ \"4\" ],\n" +
                 "    \"name\" : null,\n" +
                 "    \"purchases\" : [ ],\n" +
                 "    \"invoices\" : [ ],\n" +

@@ -31,7 +31,7 @@ public class QueryMesage extends GraphQLMessage {
 
 
     @Override
-    public Diagram substitue(GraphMorphism morphism) {
+    public QueryMesage substitue(GraphMorphism morphism) {
         Name newName = morphism.map(typeName()).get();
         String messageNameFull = newName.print(PrintingStrategy.IGNORE_PREFIX);
         String containerType = messageNameFull.substring(0, messageNameFull.indexOf('.'));

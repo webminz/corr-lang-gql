@@ -2,7 +2,6 @@ package no.hvl.past.gqlintegration.queries;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.ExecutionInput;
@@ -17,11 +16,8 @@ import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
 import no.hvl.past.gqlintegration.predicates.MutationMessage;
 import no.hvl.past.gqlintegration.predicates.QueryMesage;
-import no.hvl.past.gqlintegration.schema.FieldMult;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.gqlintegration.schema.StubWiring;
-import no.hvl.past.graph.GraphMorphism;
-import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.predicates.*;
 import no.hvl.past.graph.trees.*;
@@ -30,10 +26,8 @@ import no.hvl.past.keys.KeyNotEvaluated;
 import no.hvl.past.names.Name;
 import no.hvl.past.names.PrintingStrategy;
 import no.hvl.past.systems.ComprSys;
-import no.hvl.past.systems.MessageArgument;
 import no.hvl.past.systems.Sys;
 import no.hvl.past.util.IOStreamUtils;
-import no.hvl.past.util.Pair;
 import org.apache.log4j.Logger;
 
 import java.io.*;
@@ -41,303 +35,304 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class GraphQLQueryDivider extends GraphQLQueryHandler {
 
     private Logger logger = Logger.getLogger(GraphQLQueryDivider.class);
 
-    // TODO make cursor its own class to have two advantages: 1) it can pre-calculate local names and field modifiers while requests are processed aynchronously 2) can make it technology independent of JSON
-
-    private enum TraversePosition {
-        MERGED_OBJECT,
-        MERGED_FIELD,
-        MERGED_OBJECT_FUSE_ARRAY,
-        MERGED_OBJECT_CONCAT_ARRAY,
-        MERGED_VALUE_ARRAY,
-        LOCAL_OBJECT,
-        LOCAL_FIELD,
-        OBJECT_ARRAY,
-        VALUE_ARRAY,
-        VALUE
-    }
-
-    private class TraverseStep {
-        private final Map<Sys, JsonNode> cursorPositions;
-        private final TraversePosition position;
-        private final JsonGenerator target;
-        private final QueryNodeChildren currentEdge;
-
-        private TraverseStep(Map<Sys, JsonNode> cursorPositions,
-                            TraversePosition position,
-                            JsonGenerator target,
-                             QueryNodeChildren currentEdge) {
-            this.cursorPositions = cursorPositions;
-            this.position = position;
-            this.target = target;
-            this.currentEdge = currentEdge;
-        }
-
-        public void advance() throws IOException, KeyNotEvaluated {
-            switch (position) {
-                case VALUE:
-                    handleValue();
-                    break;
-                case LOCAL_FIELD:
-                    handleField();
-                    break;
-                case VALUE_ARRAY:
-                    handleArray(false);
-                    break;
-                case OBJECT_ARRAY:
-                    handleArray(true);
-                    break;
-                case LOCAL_OBJECT:
-                    handleObject();
-                    break;
-                case MERGED_OBJECT:
-                    handleMergedObject();
-                    break;
-                case MERGED_VALUE_ARRAY:
-                    handleConcat(false);
-                    break;
-                case MERGED_OBJECT_CONCAT_ARRAY:
-                    handleConcat(true);
-                    break;
-                case MERGED_OBJECT_FUSE_ARRAY:
-                    handleMergeObjects();
-                    break;
-                case MERGED_FIELD:
-                    handleMergedField();
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        private void handleMergeObjects() throws KeyNotEvaluated, IOException {
-            // TODO working with multiple keys must be addressed
-            List<Key> keys = comprSys.keys().filter(k -> k.targetType().equals(currentEdge.feature().getTarget())).collect(Collectors.toList());
-            Set<Name> toIterate = new LinkedHashSet<>();
-            for (Sys ep : cursorPositions.keySet()) {
-                JsonNode node = cursorPositions.get(ep);
-                if (node.isArray()) {
-                    Iterator<JsonNode> iterator = node.iterator();
-                    while (iterator.hasNext()) {
-                        JsonNode n = iterator.next();
-                        for (Key key : keys) {
-                            Name k = key.evaluate(n);
-                            toIterate.add(k);
-                            addToCache(ep, k, n);
-                        }
-                    }
-                } else {
-                    for (Key key : keys) {
-                        Name k = key.evaluate(node);
-                        toIterate.add(k);
-                        addToCache(ep, k , node);
-                    }
-                }
-            }
-            for (Name k : toIterate) {
-                Map<Sys, JsonNode> mergedCursor = objectCursorCache.get(k);
-                if (mergedCursor.keySet().size() <= 1) {
-                    new TraverseStep(mergedCursor, TraversePosition.LOCAL_OBJECT, target, currentEdge).advance();
-                } else {
-                    new TraverseStep(mergedCursor, TraversePosition.MERGED_OBJECT, target, currentEdge).advance();
-                }
-            }
-        }
-
-        private void addToCache(Sys endpoint, Name key, JsonNode node) {
-            if (objectCursorCache.containsKey(key)) {
-                objectCursorCache.get(key).put(endpoint, node);
-            } else {
-                Map<Sys, JsonNode> cursorPos = new LinkedHashMap<>();
-                cursorPos.put(endpoint, node);
-                objectCursorCache.put(key, cursorPos);
-            }
-        }
-
-        private void handleMergedField() throws IOException, KeyNotEvaluated {
-            boolean hasKeys = comprSys.keys().anyMatch(k -> k.targetType().equals(currentEdge.feature().getTarget()));
-            boolean isObject = hasObjectReturnType(currentEdge.feature());
-            target.writeFieldName(currentEdge.key().print(PrintingStrategy.IGNORE_PREFIX));
-            if (isObject) {
-                if (hasKeys) {
-                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_FUSE_ARRAY, target, currentEdge).advance();
-                } else {
-                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_CONCAT_ARRAY, target, currentEdge).advance();
-                }
-            } else {
-                new TraverseStep(cursorPositions, TraversePosition.MERGED_VALUE_ARRAY, target, currentEdge).advance();
-            }
-        }
-
-        private void handleConcat(boolean isObject) throws IOException, KeyNotEvaluated {
-            target.writeStartArray();
-            for (Sys ep : cursorPositions.keySet()) {
-                TraversePosition nextPos;
-                if (isObject) {
-                        nextPos = TraversePosition.LOCAL_OBJECT;
-                } else {
-                    nextPos = TraversePosition.VALUE;
-                }
-                JsonNode root = cursorPositions.get(ep);
-                if (root.isArray()) {
-                        Iterator<JsonNode> iterator = root.iterator();
-                        while (iterator.hasNext()) {
-                            JsonNode node = iterator.next();
-                                new TraverseStep(
-                                        Collections.singletonMap(ep, node),
-                                        nextPos,
-                                        target,
-                                        currentEdge).advance();
-
-                        }
-                    } else {
-                            new TraverseStep(
-                                    Collections.singletonMap(ep, root),
-                                    nextPos,
-                                    target,
-                                    currentEdge).advance();
-                }
-            }
-            target.writeEndArray();
-        }
-
-
-
-        private void handleMergedObject() throws IOException, KeyNotEvaluated {
-            target.writeStartObject();
-            for (QueryNodeChildren child : currentEdge.child().children().collect(Collectors.toList())) {
-                Map<Sys, JsonNode> canDeliver = new LinkedHashMap<>();
-                for (Sys ep : cursorPositions.keySet()) {
-                    if (comprSys.localNames(ep, child.feature().getLabel()).anyMatch(x -> true)) {
-                        canDeliver.put(ep, cursorPositions.get(ep));
-                    }
-                }
-                if (canDeliver.size() > 1) {
-                    new TraverseStep(canDeliver,
-                            TraversePosition.MERGED_FIELD,
-                            target,
-                            child).advance();
-                } else if (canDeliver.size() == 1) {
-                    new TraverseStep(canDeliver,
-                            TraversePosition.LOCAL_FIELD,
-                            target,
-                            child).advance();
-                } else {
-                    target.writeFieldName(child.key().print(PrintingStrategy.IGNORE_PREFIX));
-                    target.writeNull();
-                }
-            }
-            target.writeEndObject();
-        }
-
-
-        private void handleObject() throws IOException, KeyNotEvaluated {
-            target.writeStartObject();
-            Sys key = cursorPositions.keySet().iterator().next();
-            JsonNode jsonNode = cursorPositions.get(key);
-            for (QueryNodeChildren c : currentEdge.child().children().collect(Collectors.toList())) {
-                new TraverseStep(Collections.singletonMap(key, jsonNode),
-                        TraversePosition.LOCAL_FIELD,
-                        target,
-                        c).advance();
-            }
-            target.writeEndObject();
-        }
-
-        private void handleArray(boolean isObject) throws IOException, KeyNotEvaluated {
-            target.writeStartArray();
-            Sys key = cursorPositions.keySet().iterator().next();
-            JsonNode jsonNode = cursorPositions.get(key);
-            Iterator<JsonNode> iterator = jsonNode.iterator();
-            while (iterator.hasNext()) {
-                new TraverseStep(Collections.singletonMap(key, iterator.next()),
-                        isObject ?  TraversePosition.LOCAL_OBJECT : TraversePosition.VALUE,
-                        target,
-                        currentEdge).advance();
-            }
-            target.writeEndArray();
-        }
-
-        private void handleField() throws IOException, KeyNotEvaluated {
-            Sys key = cursorPositions.keySet().iterator().next();
-            Set<Name> localNames = comprSys.localNames(key, currentEdge.feature().getLabel()).collect(Collectors.toSet());
-            if (!localNames.isEmpty()) {
-                target.writeFieldName(currentEdge.key().print(PrintingStrategy.IGNORE_PREFIX));
-                boolean listValued = isListValued(currentEdge.feature());
-                boolean isObject = hasObjectReturnType(currentEdge.feature());
-                if (listValued || localNames.size() > 1) {
-                    for (Name localName : localNames) {
-                        String fName = key.displayName(localName);
-                        if (isObject) {
-                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.OBJECT_ARRAY, target, currentEdge).advance();
-                        } else {
-                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE_ARRAY, target, currentEdge).advance();
-                        }
-                    }
-                } else {
-                    String fName = key.displayName(localNames.iterator().next());
-                    if (isObject) {
-                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.LOCAL_OBJECT, target, currentEdge).advance();
-                    } else {
-                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE, target, currentEdge).advance();
-                    }
-                }
-
-            }
-        }
-
-        private void handleValue() throws IOException {
-            Sys ep = cursorPositions.keySet().iterator().next();
-            JsonNode jsonNode = cursorPositions.get(ep);
-            if (jsonNode.isTextual()) {
-                target.writeString(jsonNode.asText());
-            } else if (jsonNode.isIntegralNumber()) {
-                target.writeNumber(jsonNode.asLong());
-            } else if (jsonNode.isFloatingPointNumber()) {
-                target.writeNumber(jsonNode.asDouble());
-            } else if (jsonNode.isBoolean()) {
-                target.writeBoolean(jsonNode.asBoolean());
-            } else if (jsonNode.isNull()) {
-                target.writeNull();
-            } else {
-                target.writeRaw(jsonNode.toString());
-            }
-        }
-
-    }
-
-    private Set<String> localNames(Sys ep, Name fieldName) {
-        return comprSys.localNames(ep, fieldName).map(ep::displayName).collect(Collectors.toSet());
-    }
-
-    private boolean isListValued(Triple edge) {
-        // TODO replace with a respective method in system
-        return comprSys.schema().diagramsOn(edge).noneMatch(diag -> TargetMultiplicity.class.isAssignableFrom(diag.label().getClass()) && ((TargetMultiplicity) diag.label()).getUpperBound() <= 1);
-    }
-
-    private boolean hasObjectReturnType(Triple edge) {
-        return !comprSys.isAttributeType(edge);
-    }
-
-    // TODO remove
-    private final Map<Name, Map<Sys, JsonNode>> objectCursorCache;
+//    // TODO make cursor its own class to have two advantages: 1) it can pre-calculate local names and field modifiers while requests are processed aynchronously 2) can make it technology independent of JSON
+//
+//    private enum TraversePosition {
+//        MERGED_OBJECT,
+//        MERGED_FIELD,
+//        MERGED_OBJECT_FUSE_ARRAY,
+//        MERGED_OBJECT_CONCAT_ARRAY,
+//        MERGED_VALUE_ARRAY,
+//        LOCAL_OBJECT,
+//        LOCAL_FIELD,
+//        OBJECT_ARRAY,
+//        VALUE_ARRAY,
+//        VALUE
+//    }
+//
+//    private class TraverseStep {
+//        private final Map<Sys, JsonNode> cursorPositions;
+//        private final TraversePosition position;
+//        private final JsonGenerator target;
+//        private final QueryBranch currentEdge;
+//
+//        private TraverseStep(Map<Sys, JsonNode> cursorPositions,
+//                            TraversePosition position,
+//                            JsonGenerator target,
+//                             QueryBranch currentEdge) {
+//            this.cursorPositions = cursorPositions;
+//            this.position = position;
+//            this.target = target;
+//            this.currentEdge = currentEdge;
+//        }
+//
+//        public void advance() throws IOException, KeyNotEvaluated {
+//            switch (position) {
+//                case VALUE:
+//                    handleValue();
+//                    break;
+//                case LOCAL_FIELD:
+//                    handleField();
+//                    break;
+//                case VALUE_ARRAY:
+//                    handleArray(false);
+//                    break;
+//                case OBJECT_ARRAY:
+//                    handleArray(true);
+//                    break;
+//                case LOCAL_OBJECT:
+//                    handleObject();
+//                    break;
+//                case MERGED_OBJECT:
+//                    handleMergedObject();
+//                    break;
+//                case MERGED_VALUE_ARRAY:
+//                    handleConcat(false);
+//                    break;
+//                case MERGED_OBJECT_CONCAT_ARRAY:
+//                    handleConcat(true);
+//                    break;
+//                case MERGED_OBJECT_FUSE_ARRAY:
+//                    handleMergeObjects();
+//                    break;
+//                case MERGED_FIELD:
+//                    handleMergedField();
+//                    break;
+//                default:
+//                    break;
+//            }
+//        }
+//
+//        private void handleMergeObjects() throws KeyNotEvaluated, IOException {
+//            // TODO working with multiple keys must be addressed
+//            List<Key> keys = comprSys.keys().filter(k -> k.targetType().equals(currentEdge.feature().getTarget())).collect(Collectors.toList());
+//            Set<Name> toIterate = new LinkedHashSet<>();
+//            for (Sys ep : cursorPositions.keySet()) {
+//                JsonNode node = cursorPositions.get(ep);
+//                if (node.isArray()) {
+//                    Iterator<JsonNode> iterator = node.iterator();
+//                    while (iterator.hasNext()) {
+//                        JsonNode n = iterator.next();
+//                        for (Key key : keys) {
+//                            Name k = key.evaluate(n);
+//                            toIterate.add(k);
+//                            addToCache(ep, k, n);
+//                        }
+//                    }
+//                } else {
+//                    for (Key key : keys) {
+//                        Name k = key.evaluate(node);
+//                        toIterate.add(k);
+//                        addToCache(ep, k , node);
+//                    }
+//                }
+//            }
+//            for (Name k : toIterate) {
+//                Map<Sys, JsonNode> mergedCursor = objectCursorCache.get(k);
+//                if (mergedCursor.keySet().size() <= 1) {
+//                    new TraverseStep(mergedCursor, TraversePosition.LOCAL_OBJECT, target, currentEdge).advance();
+//                } else {
+//                    new TraverseStep(mergedCursor, TraversePosition.MERGED_OBJECT, target, currentEdge).advance();
+//                }
+//            }
+//        }
+//
+//        private void addToCache(Sys endpoint, Name key, JsonNode node) {
+//            if (objectCursorCache.containsKey(key)) {
+//                objectCursorCache.get(key).put(endpoint, node);
+//            } else {
+//                Map<Sys, JsonNode> cursorPos = new LinkedHashMap<>();
+//                cursorPos.put(endpoint, node);
+//                objectCursorCache.put(key, cursorPos);
+//            }
+//        }
+//
+//        private void handleMergedField() throws IOException, KeyNotEvaluated {
+//            boolean hasKeys = comprSys.keys().anyMatch(k -> k.targetType().equals(currentEdge.feature().getTarget()));
+//            boolean isObject = hasObjectReturnType(currentEdge.feature());
+//            target.writeFieldName(currentEdge.label().print(PrintingStrategy.IGNORE_PREFIX));
+//            if (isObject) {
+//                if (hasKeys) {
+//                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_FUSE_ARRAY, target, currentEdge).advance();
+//                } else {
+//                    new TraverseStep(cursorPositions, TraversePosition.MERGED_OBJECT_CONCAT_ARRAY, target, currentEdge).advance();
+//                }
+//            } else {
+//                new TraverseStep(cursorPositions, TraversePosition.MERGED_VALUE_ARRAY, target, currentEdge).advance();
+//            }
+//        }
+//
+//        private void handleConcat(boolean isObject) throws IOException, KeyNotEvaluated {
+//            target.writeStartArray();
+//            for (Sys ep : cursorPositions.keySet()) {
+//                TraversePosition nextPos;
+//                if (isObject) {
+//                        nextPos = TraversePosition.LOCAL_OBJECT;
+//                } else {
+//                    nextPos = TraversePosition.VALUE;
+//                }
+//                JsonNode root = cursorPositions.get(ep);
+//                if (root.isArray()) {
+//                        Iterator<JsonNode> iterator = root.iterator();
+//                        while (iterator.hasNext()) {
+//                            JsonNode node = iterator.next();
+//                                new TraverseStep(
+//                                        Collections.singletonMap(ep, node),
+//                                        nextPos,
+//                                        target,
+//                                        currentEdge).advance();
+//
+//                        }
+//                    } else {
+//                            new TraverseStep(
+//                                    Collections.singletonMap(ep, root),
+//                                    nextPos,
+//                                    target,
+//                                    currentEdge).advance();
+//                }
+//            }
+//            target.writeEndArray();
+//        }
+//
+//
+//
+//        private void handleMergedObject() throws IOException, KeyNotEvaluated {
+//            target.writeStartObject();
+//            for (QueryBranch child : currentEdge.child().children().collect(Collectors.toList())) {
+//                Map<Sys, JsonNode> canDeliver = new LinkedHashMap<>();
+//                for (Sys ep : cursorPositions.keySet()) {
+//                    if (comprSys.localNames(ep, child.feature().getLabel()).anyMatch(x -> true)) {
+//                        canDeliver.put(ep, cursorPositions.get(ep));
+//                    }
+//                }
+//                if (canDeliver.size() > 1) {
+//                    new TraverseStep(canDeliver,
+//                            TraversePosition.MERGED_FIELD,
+//                            target,
+//                            child).advance();
+//                } else if (canDeliver.size() == 1) {
+//                    new TraverseStep(canDeliver,
+//                            TraversePosition.LOCAL_FIELD,
+//                            target,
+//                            child).advance();
+//                } else {
+//                    target.writeFieldName(child.label().print(PrintingStrategy.IGNORE_PREFIX));
+//                    target.writeNull();
+//                }
+//            }
+//            target.writeEndObject();
+//        }
+//
+//
+//        private void handleObject() throws IOException, KeyNotEvaluated {
+//            target.writeStartObject();
+//            Sys key = cursorPositions.keySet().iterator().next();
+//            JsonNode jsonNode = cursorPositions.get(key);
+//            for (QueryBranch c : currentEdge.child().children().collect(Collectors.toList())) {
+//                new TraverseStep(Collections.singletonMap(key, jsonNode),
+//                        TraversePosition.LOCAL_FIELD,
+//                        target,
+//                        c).advance();
+//            }
+//            target.writeEndObject();
+//        }
+//
+//        private void handleArray(boolean isObject) throws IOException, KeyNotEvaluated {
+//            target.writeStartArray();
+//            Sys key = cursorPositions.keySet().iterator().next();
+//            JsonNode jsonNode = cursorPositions.get(key);
+//            Iterator<JsonNode> iterator = jsonNode.iterator();
+//            while (iterator.hasNext()) {
+//                new TraverseStep(Collections.singletonMap(key, iterator.next()),
+//                        isObject ?  TraversePosition.LOCAL_OBJECT : TraversePosition.VALUE,
+//                        target,
+//                        currentEdge).advance();
+//            }
+//            target.writeEndArray();
+//        }
+//
+//        private void handleField() throws IOException, KeyNotEvaluated {
+//            Sys key = cursorPositions.keySet().iterator().next();
+//            Set<Name> localNames = comprSys.localNames(key, currentEdge.feature().getLabel()).collect(Collectors.toSet());
+//            if (!localNames.isEmpty()) {
+//                target.writeFieldName(currentEdge.label().print(PrintingStrategy.IGNORE_PREFIX));
+//                boolean listValued = isListValued(currentEdge.feature());
+//                boolean isObject = hasObjectReturnType(currentEdge.feature());
+//                if (listValued || localNames.size() > 1) {
+//                    for (Name localName : localNames) {
+//                        String fName = key.displayName(localName);
+//                        if (isObject) {
+//                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.OBJECT_ARRAY, target, currentEdge).advance();
+//                        } else {
+//                            new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE_ARRAY, target, currentEdge).advance();
+//                        }
+//                    }
+//                } else {
+//                    String fName = key.displayName(localNames.iterator().next());
+//                    if (isObject) {
+//                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.LOCAL_OBJECT, target, currentEdge).advance();
+//                    } else {
+//                        new TraverseStep(Collections.singletonMap(key, cursorPositions.get(key).get(fName)), TraversePosition.VALUE, target, currentEdge).advance();
+//                    }
+//                }
+//
+//            }
+//        }
+//
+//        private void handleValue() throws IOException {
+//            Sys ep = cursorPositions.keySet().iterator().next();
+//            JsonNode jsonNode = cursorPositions.get(ep);
+//            if (jsonNode.isTextual()) {
+//                target.writeString(jsonNode.asText());
+//            } else if (jsonNode.isIntegralNumber()) {
+//                target.writeNumber(jsonNode.asLong());
+//            } else if (jsonNode.isFloatingPointNumber()) {
+//                target.writeNumber(jsonNode.asDouble());
+//            } else if (jsonNode.isBoolean()) {
+//                target.writeBoolean(jsonNode.asBoolean());
+//            } else if (jsonNode.isNull()) {
+//                target.writeNull();
+//            } else {
+//                target.writeRaw(jsonNode.toString());
+//            }
+//        }
+//
+//    }
+//
+//    private Set<String> localNames(Sys ep, Name fieldName) {
+//        return comprSys.localNames(ep, fieldName).map(ep::displayName).collect(Collectors.toSet());
+//    }
+//
+//    private boolean isListValued(Triple edge) {
+//        // TODO replace with a respective method in system
+//        return comprSys.schema().diagramsOn(edge).noneMatch(diag -> TargetMultiplicity.class.isAssignableFrom(diag.label().getClass()) && ((TargetMultiplicity) diag.label()).getUpperBound() <= 1);
+//    }
+//
+//    private boolean hasObjectReturnType(Triple edge) {
+//        return !comprSys.isAttributeType(edge);
+//    }
+//
+//    // TODO remove
+//    private final Map<Name, Map<Sys, JsonNode>> objectCursorCache;
 
     private ComprSys comprSys;
     private Map<Sys, QueryHandler> localHandlers;
     private GraphQL javaGraphQLEngine;
 
-    public GraphQLQueryDivider(ComprSys comprSys, Map<Sys, QueryHandler> localHandlers, GraphQL javaGraphQLEngine, GraphQLEndpoint endpoint) {
+    public GraphQLQueryDivider(
+            ComprSys comprSys,
+            Map<Sys, QueryHandler> localHandlers,
+            GraphQL javaGraphQLEngine,
+            GraphQLEndpoint endpoint) {
         super(endpoint);
         this.comprSys = comprSys;
         this.localHandlers = localHandlers;
         this.javaGraphQLEngine = javaGraphQLEngine;
-        // TODO remove
-        this.objectCursorCache = new LinkedHashMap<>();
     }
 
 
@@ -380,8 +375,6 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             getObjectMapper().writeValue(os, spec);
         }
     }
-
-
 
 
     public void merge(

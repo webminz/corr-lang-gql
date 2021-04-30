@@ -34,8 +34,7 @@ public abstract class GraphQLQueryHandler implements QueryHandler {
     private static final String QUERY_OPERATION_FIELD = "operationName";
     private static final String INTROSPECTION_ROOT = "__schema";
     public static final String QUERY_VARIABLES_FIELD = "variables";
-
-    private GraphQLEndpoint endpoint;
+    private final GraphQLEndpoint endpoint;
 
     protected GraphQLQueryHandler(GraphQLEndpoint endpoint) {
         this.endpoint = endpoint;
@@ -44,6 +43,7 @@ public abstract class GraphQLQueryHandler implements QueryHandler {
     ObjectMapper getObjectMapper() {
         return endpoint.getObjectMapper();
     }
+
     JsonFactory getJsonFactory() {
         return endpoint.getJsonFactory();
     }

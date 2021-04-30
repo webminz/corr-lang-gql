@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static junit.framework.TestCase.assertEquals;
@@ -294,6 +295,70 @@ public class SchemaWriterTest extends GraphQLTest {
                 "   email : String\n" +
                 "}\n\n";
         testExpectedSchema(sketch,expected);
+    }
+
+
+    @Test
+    public void testPrefixedSchema() throws GraphError, IOException {
+        Name p0 = Name.identifier("shared");
+        Name p1 = Name.identifier("left");
+        Name p2 = Name.identifier("right");
+
+        Sketch sketch = contextCreatingBuilder()
+                .node(Name.identifier("DataTypeString").prefixWith(p0))
+                .node(Name.identifier("A").prefixWith(p1))
+                .node(Name.identifier("B").prefixWith(p2))
+                .node(Name.identifier("Query.read").prefixWith(p1))
+                .node(Name.identifier("Query.read").prefixWith(p2))
+                .edge(Name.identifier("A").prefixWith(p1), Name.identifier("content").prefixWith(Name.identifier("A")).prefixWith(p1), Name.identifier("DataTypeString").prefixWith(p0))
+                .edge(Name.identifier("B").prefixWith(p2), Name.identifier("text").prefixWith(Name.identifier("B")).prefixWith(p2), Name.identifier("DataTypeString").prefixWith(p0))
+                .edge(Name.identifier("Query.read").prefixWith(p1), Name.identifier("result").prefixWith(Name.identifier("Query.read")).prefixWith(p1), Name.identifier("A").prefixWith(p1))
+                .edge(Name.identifier("Query.read").prefixWith(p2), Name.identifier("result").prefixWith(Name.identifier("Query.read")).prefixWith(p2), Name.identifier("B").prefixWith(p2))
+                .graph(Name.identifier("Merged").absolute())
+                .startDiagram(StringDT.getInstance())
+                .map(Universe.ONE_NODE_THE_NODE, Name.identifier("DataTypeString").prefixWith(p0))
+                .endDiagram(Name.anonymousIdentifier())
+                .startDiagram(TargetMultiplicity.getInstance(1, 1))
+                .map(Universe.ARROW_SRC_NAME, Name.identifier("A").prefixWith(p1))
+                .map(Universe.ARROW_LBL_NAME, Name.identifier("content").prefixWith(Name.identifier("A")).prefixWith(p1))
+                .map(Universe.ARROW_TRG_NAME, Name.identifier("DataTypeString").prefixWith(p0))
+                .endDiagram(Name.anonymousIdentifier())
+                .startDiagram(TargetMultiplicity.getInstance(1, 1))
+                .map(Universe.ARROW_SRC_NAME, Name.identifier("B").prefixWith(p2))
+                .map(Universe.ARROW_LBL_NAME, Name.identifier("text").prefixWith(Name.identifier("B")).prefixWith(p2))
+                .map(Universe.ARROW_TRG_NAME, Name.identifier("DataTypeString").prefixWith(p0))
+                .endDiagram(Name.anonymousIdentifier())
+                .sketch(Name.identifier("Merged"))
+                .getResult(Sketch.class);
+
+        ArrayList<MessageArgument> arguments = new ArrayList<>();
+        QueryMesage qm = new QueryMesage(sketch.carrier(), Name.identifier("Query.read").prefixWith(p1), "Query", "read", arguments);
+        arguments.add(new MessageArgument(qm, Name.identifier("result").prefixWith(Name.identifier("Query.read")).prefixWith(p1),  Name.identifier("A").prefixWith(p1), 0, true));
+
+
+        ArrayList<MessageArgument> arguments2 = new ArrayList<>();
+        QueryMesage qm2 = new QueryMesage(sketch.carrier(), Name.identifier("Query.read").prefixWith(p2), "Query", "read", arguments2);
+        arguments2.add(new MessageArgument(qm2, Name.identifier("result").prefixWith(Name.identifier("Query.read")).prefixWith(p2),  Name.identifier("B").prefixWith(p2), 0, true));
+
+
+        Sketch result = sketch.restrict(Arrays.asList(qm, qm2));
+
+        String expected = "type Query {\n" +
+                "\tread_left : [A]\n" +
+                "\tread_right : [B]\n" +
+                "}\n" +
+                "\n" +
+                "type A {\n" +
+                "\tcontent : String!\n" +
+                "}\n" +
+                "\n" +
+                "type B {\n" +
+                "\ttext : String!\n" +
+                "}\n\n";
+
+        testExpectedSchema(result, expected);
+
+
     }
 
 

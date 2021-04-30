@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+// TODO This is more like a proper integration test, thus it should be treated as one at not rely on too much low level stuff
 public class QuerySplittingTest extends GraphQLTest{
 
 
@@ -257,11 +258,11 @@ public class QuerySplittingTest extends GraphQLTest{
                 .morphism("Projection2")
                 .getResult(GraphMorphism.class);
 
-        Star federation = new StarImpl(Name.identifier("federation"),
+        Star federation = new StarImpl(
+                Name.identifier("federation"),
                 result,
                 Arrays.asList(endpoint1Schema, endpoint2Schema, endpoint3Schema),
-                Arrays.asList(p1, p2, p3),
-                result.carrier().elements().map(Triple::getLabel).collect(Collectors.toSet()));
+                Arrays.asList(p1, p2, p3));
 
 
         GraphQLQueryHandler ep1Handler = new GraphQLQueryHandler(null) { // TODO fix, just to get the compile error away
@@ -448,20 +449,22 @@ public class QuerySplittingTest extends GraphQLTest{
         plainNames.put(Name.identifier("x").prefixWith(Name.identifier("A1")), "x");
         plainNames.put(Name.identifier("y").prefixWith(Name.identifier("A2")), "y");
 
-        Pair<Sketch, List<GraphMorphism>> fedResult = federation.comprehensiveSystem();
+        ComprSys.Builder csBuilder = new ComprSys.Builder(federation.getName(), getUniverseForTest())
+                .addSystem(s1)
+                .addSystem(s2)
+                .addSystem(s3)
+                .star(federation);
+
+        result.carrier().elements().map(Triple::getLabel).forEach(t -> csBuilder.identification(t));
+        ComprSys cs = csBuilder
+                .build();
 
 
-        Map<Sys, GraphMorphism> embeddings = new LinkedHashMap<>();
-        embeddings.put(s1, fedResult.getSecond().get(1));
-        embeddings.put(s2, fedResult.getSecond().get(2));
-        embeddings.put(s3, fedResult.getSecond().get(3));
 
         LinkedHashMap<Sys, QueryHandler> localHandlers = new LinkedHashMap<>();
         localHandlers.put(s1, ep1Handler);
         localHandlers.put(s2, ep2Handler);
         localHandlers.put(s3, ep3Handler);
-
-        ComprSys cs = new ComprSys.Impl("http://federation", fedResult.getFirst(), plainNames, embeddings, result.carrier().elements().map(Triple::getLabel).collect(Collectors.toSet()), new HashSet<>());
 
 
         GraphQLQueryHandler queryDivider = GraphQLQueryDivider.create(om, jsonFactory, cs, localHandlers);

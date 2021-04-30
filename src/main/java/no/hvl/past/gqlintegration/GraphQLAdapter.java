@@ -19,6 +19,7 @@ import no.hvl.past.names.PrintingStrategy;
 import no.hvl.past.plugin.UnsupportedFeatureException;
 import no.hvl.past.server.WebserviceRequestHandler;
 import no.hvl.past.systems.ComprSys;
+import no.hvl.past.systems.Data;
 import no.hvl.past.systems.Sys;
 import no.hvl.past.techspace.TechSpaceAdapter;
 import no.hvl.past.techspace.TechSpaceDirective;
@@ -107,14 +108,14 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
     }
 
     @Override
-    public GraphMorphism readInstance(Sys system, InputStream inputStream) throws TechSpaceException, UnsupportedFeatureException {
+    public Data readInstance(Sys system, InputStream inputStream) throws TechSpaceException, UnsupportedFeatureException {
         try {
             if (system instanceof GraphQLEndpoint) {
                 GraphQLEndpoint endpoint = (GraphQLEndpoint) system;
-                return endpoint.parseQueryOrInstance(inputStream);
+                return Data.fromTree(system, (TypedTree) endpoint.parseQueryOrInstance(inputStream));
             }
             if (system instanceof ComprSys) {
-                return (TypedTree) GraphQLQueryDivider.create(objectMapper, jsonFactory,(ComprSys) system, new LinkedHashMap<>()).deserialize(inputStream);
+                return Data.fromTree(system, (TypedTree) GraphQLQueryDivider.create(objectMapper, jsonFactory, (ComprSys) system, new LinkedHashMap<>()).deserialize(inputStream));
             }
             throw new TechSpaceException("Cannot parse instance for '" + system.url() + "'", GraphQLTechSpace.INSTANCE);
         } catch (IOException e) {

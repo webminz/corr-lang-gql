@@ -1,15 +1,11 @@
 package no.hvl.past.gqlintegration.queries;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import no.hvl.past.attributes.StringValue;
 import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
 import no.hvl.past.gqlintegration.predicates.MutationMessage;
-import no.hvl.past.gqlintegration.predicates.QueryMesage;
-import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.elements.Triple;
-import no.hvl.past.graph.trees.TypedChildrenRelation;
+import no.hvl.past.graph.trees.TypedBranch;
 import no.hvl.past.graph.trees.TypedNode;
 import no.hvl.past.names.Name;
 import no.hvl.past.names.PrintingStrategy;
@@ -22,7 +18,6 @@ import org.apache.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.util.*;
 import java.util.function.BiFunction;
 
@@ -227,8 +222,8 @@ class GraphQLQueryParser {
             if (arg.isPresent()) {
                 this.currentNode.addAttribute(key, value, makeValue(value),
                         Triple.edge(
-                                ((TypedNode) this.currentNode.parentRelation().get().parent()).nodeType().get(),
-                                ((TypedChildrenRelation) currentNode.parentRelation().get()).edgeTyping().get(),
+                                ((TypedNode) this.currentNode.parentRelation().get().parent()).nodeType(),
+                                ((TypedBranch) currentNode.parentRelation().get()).edgeTyping(),
                                 this.currentNode.typing()));
             } else {
                 logger.warn("The argument '" + key + "' on '" + this.currentNode.getLabel() + "' is not found");

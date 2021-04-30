@@ -1,7 +1,5 @@
 package no.hvl.past.gqlintegration.queries;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import no.hvl.past.graph.Graph;
@@ -55,7 +53,7 @@ public class GraphQLQuery implements QueryTree {
         boolean isComplex();
     }
 
-    public static class SelectionSet implements QueryNodeChildren.Projection, AbstractSelection {
+    public static class SelectionSet implements QueryBranch.Projection, AbstractSelection {
 
          private final Triple typing;
          private final Node parent;
@@ -89,18 +87,18 @@ public class GraphQLQuery implements QueryTree {
         }
 
          @Override
-         public Triple feature() {
-             return typing;
-         }
-
-         @Override
-         public no.hvl.past.graph.trees.Node parent() {
+         public QueryNode parent() {
              return parent;
          }
 
+        @Override
+        public Name edgeTyping() {
+            return typing.getLabel();
+        }
+
          @Override
-         public Name key() {
-             return child.branchName();
+         public String label() {
+             return child.label;
          }
 
          @Override
@@ -157,7 +155,7 @@ public class GraphQLQuery implements QueryTree {
         }
     }
 
-    public static class Argument implements QueryNodeChildren.Selection {
+    public static class Argument implements QueryBranch.Selection {
 
         private final String name;
         private final String valueText;
@@ -183,18 +181,18 @@ public class GraphQLQuery implements QueryTree {
         }
 
         @Override
-        public Triple feature() {
-            return type;
-        }
-
-        @Override
-        public no.hvl.past.graph.trees.Node parent() {
+        public Node parent() {
             return parent;
         }
 
         @Override
-        public Name key() {
-            return Name.identifier(name);
+        public Name edgeTyping() {
+            return type.getLabel();
+        }
+
+        @Override
+        public String label() {
+            return name;
         }
 
         @Override
@@ -202,21 +200,21 @@ public class GraphQLQuery implements QueryTree {
             return new QueryNode() {
                 @Override
                 public Name branchName() {
-                    return key();
+                    return Name.identifier(label());
                 }
 
                 @Override
-                public Name typing() {
-                    return feature().getTarget();
+                public Name nodeType() {
+                    return type.getTarget();
                 }
 
                 @Override
-                public Stream<QueryNodeChildren> children() {
+                public Stream<Branch> children() {
                     return Stream.empty();
                 }
 
                 @Override
-                public Optional<ChildrenRelation> parentRelation() {
+                public Optional<Branch> parentRelation() {
                     return Optional.of(GraphQLQuery.Argument.this);
                 }
             };
@@ -329,19 +327,23 @@ public class GraphQLQuery implements QueryTree {
             return Name.identifier(label);
         }
 
-        @Override
         public Name typing() {
             return type;
         }
 
         @Override
-        public Optional<ChildrenRelation> parentRelation() {
+        public Optional<Branch> parentRelation() {
             return Optional.ofNullable(parent);
         }
 
         @Override
-        public Stream<QueryNodeChildren> children() {
-            List<QueryNodeChildren> result = new ArrayList<>();
+        public Name nodeType() {
+            return typing();
+        }
+
+        @Override
+        public Stream<Branch> children() {
+            List<Branch> result = new ArrayList<>();
             this.arguments.forEach(result::add);
             this.children.forEach(result::add);
             return result.stream();
@@ -433,7 +435,7 @@ public class GraphQLQuery implements QueryTree {
         }
 
         @Override
-        public Optional<ChildrenRelation> parentRelation() {
+        public Optional<Branch> parentRelation() {
             return Optional.empty();
         }
 
