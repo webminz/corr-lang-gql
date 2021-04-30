@@ -236,5 +236,7 @@ public class GraphQLEndpoint extends Sys.Impl {
     }
 
 
-
+    public void setQueryHandler(GraphQLQueryHandler handler) {
+        this.queryHandler = handler;
+    }
 }

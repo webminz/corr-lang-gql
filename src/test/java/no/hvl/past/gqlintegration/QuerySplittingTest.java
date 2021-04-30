@@ -25,7 +25,6 @@ import java.util.stream.Collectors;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-// TODO This is more like a proper integration test, thus it should be treated as one at not rely on too much low level stuff
 public class QuerySplittingTest extends GraphQLTest{
 
 
@@ -78,138 +77,20 @@ public class QuerySplittingTest extends GraphQLTest{
         ObjectMapper om = new ObjectMapper(jsonFactory);
 
         GraphQLSchemaReader converter = new GraphQLSchemaReader(getUniverseForTest());
-        Sketch endpoint1Schema = converter.convert(Name.identifier("EP1"), parseSchemaAsText(ENDPOINT1_SCHEMA));
-        Sketch endpoint2Schema = converter.convert(Name.identifier("EP2"), parseSchemaAsText(ENDPOINT2_SCHEMA));
-        Sketch endpoint3Schema = converter.convert(Name.identifier("EP3"), parseSchemaAsText(ENDPOINT3_SCHEMA));
+        Sketch ep1Schema = converter.convert(Name.identifier("EP1"), parseSchemaAsText(ENDPOINT1_SCHEMA));
+        GraphQLEndpoint ep1 = new GraphQLEndpoint("http://1", ep1Schema, converter.getNameToText(), converter.getMultiplicities(), converter.getQueries(), converter.getMuations(), om, jsonFactory, converter.getQueryTypeName(), converter.getMutationTypeName());
+
+        converter = new GraphQLSchemaReader(getUniverseForTest());
+        Sketch ep2Schema = converter.convert(Name.identifier("EP2"), parseSchemaAsText(ENDPOINT2_SCHEMA));
+        GraphQLEndpoint ep2 = new GraphQLEndpoint("http://2", ep2Schema, converter.getNameToText(), converter.getMultiplicities(), converter.getQueries(), converter.getMuations(), om, jsonFactory, converter.getQueryTypeName(), converter.getMutationTypeName());
+
+        converter = new GraphQLSchemaReader(getUniverseForTest());
+        Sketch ep3Schema = converter.convert(Name.identifier("EP3"), parseSchemaAsText(ENDPOINT3_SCHEMA));
+        GraphQLEndpoint ep3 = new GraphQLEndpoint("http://3", ep3Schema, converter.getNameToText(), converter.getMultiplicities(), converter.getQueries(), converter.getMuations(), om, jsonFactory, converter.getQueryTypeName(), converter.getMutationTypeName());
+
+
 
         GraphBuilders builders = new GraphBuilders(getUniverseForTest(), true, false);
-
-
-        Map<Name, String> ep1PlainNames = new HashMap<>();
-        ep1PlainNames.put(Name.identifier("Query.r"), "r");
-        ep1PlainNames.put(Name.identifier("result").prefixWith(Name.identifier("Query.r")), "r");
-        ep1PlainNames.put(Name.identifier("String"), "String");
-        ep1PlainNames.put(Name.identifier("R1"), "R1");
-        ep1PlainNames.put(Name.identifier("a").prefixWith(Name.identifier("R1")), "a");
-        ep1PlainNames.put(Name.identifier("A1"), "A1");
-        ep1PlainNames.put(Name.identifier("x").prefixWith(Name.identifier("A1")), "x");
-
-
-        Map<Name, String> ep2PlainNames = new HashMap<>();
-        ep2PlainNames.put(Name.identifier("Query.r"), "r");
-        ep2PlainNames.put(Name.identifier("result").prefixWith(Name.identifier("Query.r")), "r");
-        ep2PlainNames.put(Name.identifier("String"), "String");
-        ep2PlainNames.put(Name.identifier("Int"), "Int");
-        ep2PlainNames.put(Name.identifier("R2"), "R2");
-        ep2PlainNames.put(Name.identifier("a").prefixWith(Name.identifier("R2")), "a");
-        ep2PlainNames.put(Name.identifier("b").prefixWith(Name.identifier("R2")), "b");
-        ep2PlainNames.put(Name.identifier("A2"), "A2");
-        ep2PlainNames.put(Name.identifier("B2"), "B2");
-        ep2PlainNames.put(Name.identifier("y").prefixWith(Name.identifier("A2")), "y");
-        ep2PlainNames.put(Name.identifier("z2").prefixWith(Name.identifier("B2")), "z2");
-
-        Map<Name, String> ep3PlainNames = new HashMap<>();
-        ep3PlainNames.put(Name.identifier("Query.r"), "r");
-        ep3PlainNames.put(Name.identifier("result").prefixWith(Name.identifier("Query.r")), "r");
-
-        ep3PlainNames.put(Name.identifier("String"), "String");
-        ep3PlainNames.put(Name.identifier("R3"), "R3");
-        ep3PlainNames.put(Name.identifier("b").prefixWith(Name.identifier("R3")), "b");
-        ep3PlainNames.put(Name.identifier("B3"), "B3");
-        ep3PlainNames.put(Name.identifier("z3").prefixWith(Name.identifier("B3")), "z3");
-
-        Sys s1 = new Sys() {
-            @Override
-            public String displayName(Name name) {
-                return ep1PlainNames.get(name);
-            }
-
-            @Override
-            public Optional<Triple> lookup(String... path) {
-                if (path[0].equals("Query")) {
-                    return endpoint1Schema.carrier().get(Name.identifier("Query." + path[1]));
-                }
-                if (path.length == 2) {
-                    return endpoint2Schema.carrier().outgoing(Name.identifier(path[0])).filter(t -> ep3PlainNames.get(t.getLabel()).equals(path[1])).findFirst();
-                }
-                if (path.length == 1) {
-                    return endpoint1Schema.carrier().get(Name.identifier(path[0]));
-                }
-                return Optional.empty();
-            }
-
-            @Override
-            public Sketch schema() {
-                return endpoint1Schema;
-            }
-
-            @Override
-            public String url() {
-                return "http://ep1";
-            }
-        };
-
-        Sys s2 = new Sys() {
-            @Override
-            public String displayName(Name name) {
-                return ep2PlainNames.get(name);
-            }
-
-            @Override
-            public Optional<Triple> lookup(String... path) {
-                if (path[0].equals("Query")) {
-                    return endpoint2Schema.carrier().get(Name.identifier("Query." + path[1]));
-                }
-                if (path.length == 2) {
-                    return endpoint2Schema.carrier().outgoing(Name.identifier(path[0])).filter(t -> ep2PlainNames.get(t.getLabel()).equals(path[1])).findFirst();
-                }
-                if (path.length == 1) {
-                    return endpoint2Schema.carrier().get(Name.identifier(path[0]));
-                }
-                return Optional.empty();
-            }
-
-            @Override
-            public Sketch schema() {
-                return endpoint2Schema;
-            }
-
-            @Override
-            public String url() {
-                return "http://ep2";
-            }
-        };
-
-        Sys s3 = new Sys() {
-            @Override
-            public String displayName(Name name) {
-                return ep3PlainNames.get(name);
-            }
-
-            @Override
-            public Optional<Triple> lookup(String... path) {
-                if (path[0].equals("Query")) {
-                    return endpoint3Schema.carrier().get(Name.identifier("Query." + path[1]));
-                }
-                if (path.length == 2) {
-                    return endpoint3Schema.carrier().outgoing(Name.identifier(path[0])).filter(t -> ep3PlainNames.get(t.getLabel()).equals(path[1])).findFirst();
-                }
-                if (path.length == 1) {
-                    return endpoint3Schema.carrier().get(Name.identifier(path[0]));
-                }
-                return Optional.empty();
-            }
-
-            @Override
-            public Sketch schema() {
-                return endpoint3Schema;
-            }
-
-            @Override
-            public String url() {
-                return "http://ep3";
-            }
-        };
 
 
         Sketch result = builders
@@ -222,7 +103,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 .getResult(Sketch.class);
 
         GraphMorphism p1 = builders.domain(result.carrier())
-                .codomain(endpoint1Schema.carrier())
+                .codomain(ep1Schema.carrier())
                 .map(Name.identifier("Query.r"), Name.identifier("Query.r"))
                 .map(Name.identifier("result").prefixWith(Name.identifier("Query.r")), Name.identifier("result").prefixWith(Name.identifier("Query.r")))
                 .map(Name.identifier("R"), Name.identifier("R1"))
@@ -233,7 +114,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 .getResult(GraphMorphism.class);
 
         GraphMorphism p2 = builders.domain(result.carrier())
-                .codomain(endpoint2Schema.carrier())
+                .codomain(ep2Schema.carrier())
                 .map(Name.identifier("Query.r"), Name.identifier("Query.r"))
                 .map(Name.identifier("result").prefixWith(Name.identifier("Query.r")), Name.identifier("result").prefixWith(Name.identifier("Query.r")))
                 .map(Name.identifier("R"), Name.identifier("R2"))
@@ -247,7 +128,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 .getResult(GraphMorphism.class);
 
         GraphMorphism p3 = builders.domain(result.carrier())
-                .codomain(endpoint3Schema.carrier())
+                .codomain(ep3Schema.carrier())
                 .map(Name.identifier("Query.r"), Name.identifier("Query.r"))
                 .map(Name.identifier("result").prefixWith(Name.identifier("Query.r")), Name.identifier("result").prefixWith(Name.identifier("Query.r")))
                 .map(Name.identifier("R"), Name.identifier("R3"))
@@ -261,18 +142,11 @@ public class QuerySplittingTest extends GraphQLTest{
         Star federation = new StarImpl(
                 Name.identifier("federation"),
                 result,
-                Arrays.asList(endpoint1Schema, endpoint2Schema, endpoint3Schema),
+                Arrays.asList(ep1Schema, ep2Schema, ep3Schema),
                 Arrays.asList(p1, p2, p3));
 
 
-        GraphQLQueryHandler ep1Handler = new GraphQLQueryHandler(null) { // TODO fix, just to get the compile error away
-
-
-            @Override
-            protected String displayName(Name formalName) {
-                return ep1PlainNames.get(formalName);
-            }
-
+        GraphQLQueryHandler ep1Handler = new GraphQLQueryHandler(ep1) {
 
             @Override
             public void handle(InputStream i, OutputStream o) throws IOException {
@@ -284,7 +158,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 GraphQLQuery.Node x = new GraphQLQuery.Node("x", Name.identifier("String"));
                 root.addChild(a, Triple.edge(Name.identifier("R1"), Name.identifier("a").prefixWith(Name.identifier("R1")), Name.identifier("A1")), true, true);
                 a.addChild(x, Triple.edge(Name.identifier("A1"), Name.identifier("x").prefixWith(Name.identifier("A1")), Name.identifier("String")), false, false);
-                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), endpoint1Schema, Name.anonymousIdentifier());
+                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep1Schema, Name.anonymousIdentifier());
 
                 assertEquals(expected.textualRepresentation(), actual.textualRepresentation());
                 JsonGenerator generator = new JsonFactory().createGenerator(o);
@@ -322,15 +196,9 @@ public class QuerySplittingTest extends GraphQLTest{
                 o.close();
             }
         };
+        ep1.setQueryHandler(ep1Handler);
 
-        GraphQLQueryHandler ep2Handler = new GraphQLQueryHandler(null) { // TODO fix
-
-
-
-            @Override
-            protected String displayName(Name formalName) {
-                return ep2PlainNames.get(formalName);
-            }
+        GraphQLQueryHandler ep2Handler = new GraphQLQueryHandler(ep2) {
 
             @Override
             public void handle(InputStream i, OutputStream o) throws IOException {
@@ -346,7 +214,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 root.addChild(b, Triple.edge(Name.identifier("R2"), Name.identifier("b").prefixWith(Name.identifier("R2")), Name.identifier("B2")), true, true);
                 a.addChild(y, Triple.edge(Name.identifier("A2"), Name.identifier("y").prefixWith(Name.identifier("A2")), Name.identifier("Int")), false, false);
                 b.addChild(z, Triple.edge(Name.identifier("B2"), Name.identifier("z2").prefixWith(Name.identifier("B2")), Name.identifier("String")), false, false);
-                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), endpoint2Schema, Name.anonymousIdentifier());
+                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep2Schema, Name.anonymousIdentifier());
                 assertEquals(expected.textualRepresentation(), actual.textualRepresentation());
                 JsonGenerator generator = new JsonFactory().createGenerator(o);
                 generator.writeStartObject();
@@ -377,15 +245,9 @@ public class QuerySplittingTest extends GraphQLTest{
                 o.close();
             }
         };
+        ep2.setQueryHandler(ep2Handler);
 
-        GraphQLQueryHandler ep3Handler = new GraphQLQueryHandler(null) { // TODO fix
-
-
-            @Override
-            protected String displayName(Name formalName) {
-
-                return ep3PlainNames.get(formalName);
-            }
+        GraphQLQueryHandler ep3Handler = new GraphQLQueryHandler(ep3) {
 
 
             @Override
@@ -399,7 +261,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 GraphQLQuery.Node z = new GraphQLQuery.Node("z3", Name.identifier("String"));
                 root.addChild(b, Triple.edge(Name.identifier("R3"), Name.identifier("b").prefixWith(Name.identifier("R3")), Name.identifier("B3")), true, true);
                 b.addChild(z, Triple.edge(Name.identifier("B3"), Name.identifier("z3").prefixWith(Name.identifier("B3")), Name.identifier("String")), false, false);
-                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), endpoint3Schema, Name.anonymousIdentifier());
+                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep3Schema, Name.anonymousIdentifier());
 
                 assertEquals(expected.textualRepresentation(), actual.textualRepresentation());
                 JsonGenerator generator = new JsonFactory().createGenerator(o);
@@ -433,38 +295,25 @@ public class QuerySplittingTest extends GraphQLTest{
                 o.close();
             }
         };
+        ep3.setQueryHandler(ep3Handler);
 
-
-        Map<Name, String> plainNames = new HashMap<>();
-        plainNames.put(Name.identifier("Query"), "Query");
-        plainNames.put(Name.identifier("String"), "String");
-        plainNames.put(Name.identifier("Int"), "Int");
-        plainNames.put(Name.identifier("r").prefixWith(Name.identifier("Query")), "r");
-        plainNames.put(Name.identifier("R"), "R");
-        plainNames.put(Name.identifier("a").prefixWith(Name.identifier("R")), "a");
-        plainNames.put(Name.identifier("b").prefixWith(Name.identifier("R")), "b");
-        plainNames.put(Name.identifier("A"), "A");
-        plainNames.put(Name.identifier("B"), "B");
-        plainNames.put(Name.identifier("z").prefixWith(Name.identifier("B")), "z");
-        plainNames.put(Name.identifier("x").prefixWith(Name.identifier("A1")), "x");
-        plainNames.put(Name.identifier("y").prefixWith(Name.identifier("A2")), "y");
 
         ComprSys.Builder csBuilder = new ComprSys.Builder(federation.getName(), getUniverseForTest())
-                .addSystem(s1)
-                .addSystem(s2)
-                .addSystem(s3)
+                .addSystem(ep1)
+                .addSystem(ep2)
+                .addSystem(ep3)
                 .star(federation);
 
-        result.carrier().elements().map(Triple::getLabel).forEach(t -> csBuilder.identification(t));
+        result.carrier().elements().map(Triple::getLabel).forEach(csBuilder::identification);
         ComprSys cs = csBuilder
                 .build();
 
 
 
         LinkedHashMap<Sys, QueryHandler> localHandlers = new LinkedHashMap<>();
-        localHandlers.put(s1, ep1Handler);
-        localHandlers.put(s2, ep2Handler);
-        localHandlers.put(s3, ep3Handler);
+        localHandlers.put(ep1, ep1Handler);
+        localHandlers.put(ep2, ep2Handler);
+        localHandlers.put(ep3, ep3Handler);
 
 
         GraphQLQueryHandler queryDivider = GraphQLQueryDivider.create(om, jsonFactory, cs, localHandlers);
@@ -532,9 +381,6 @@ public class QuerySplittingTest extends GraphQLTest{
                 "    ]\n" +
                 "  }\n" +
                 "}";
-
-
-
 
         assertEquals(om.readTree(expected).toPrettyString(), om.readTree(actual.toByteArray()).toPrettyString());
 

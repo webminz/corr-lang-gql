@@ -477,14 +477,14 @@ public class QueryTest  extends GraphQLTest {
         String rightKey = "http://employee";
 
         Multimap<String, Key> keyMap = ArrayListMultimap.create();
-        keyMap.put(leftKey, new AttributeBasedKey(Universe.EMPTY, Triple.edge(Name.identifier("Customer"), Name.identifier("name"), Name.identifier("String")), Name.identifier("Partner")));
-        keyMap.put(leftKey, new AttributeBasedKey(Universe.EMPTY, Triple.edge(Name.identifier("Customer"), Name.identifier("id"), Name.identifier("ID")), Name.identifier("Partner")));
-        keyMap.put(middleKey, new AttributeBasedKey(Universe.EMPTY, Triple.edge(Name.identifier("Client"), Name.identifier("id"), Name.identifier("ID")), Name.identifier("Partner")));
-        keyMap.put(rightKey, new ConcatenatedKey(Universe.EMPTY, Name.identifier("Partner"),
+        keyMap.put(leftKey, new AttributeBasedKey(null, Triple.edge(Name.identifier("Customer"), Name.identifier("name"), Name.identifier("String")), Name.identifier("Partner")));
+        keyMap.put(leftKey, new AttributeBasedKey(null, Triple.edge(Name.identifier("Customer"), Name.identifier("id"), Name.identifier("ID")), Name.identifier("Partner")));
+        keyMap.put(middleKey, new AttributeBasedKey(null, Triple.edge(Name.identifier("Client"), Name.identifier("id"), Name.identifier("ID")), Name.identifier("Partner")));
+        keyMap.put(rightKey, new ConcatenatedKey(Name.identifier("Partner"),Name.identifier("Employee"),null,
                         Arrays.asList(
-                                new AttributeBasedKey(Universe.EMPTY, Triple.edge(Name.identifier("Employee"), Name.identifier("firstname"), Name.identifier("String")), Name.identifier("Partner")),
-                                new ConstantKey(Universe.EMPTY, Name.value(" "), Name.identifier("Partner")),
-                                new AttributeBasedKey(Universe.EMPTY, Triple.edge(Name.identifier("Customer"), Name.identifier("lastname"), Name.identifier("String")), Name.identifier("Partner")))));
+                                new AttributeBasedKey(null, Triple.edge(Name.identifier("Employee"), Name.identifier("firstname"), Name.identifier("String")), Name.identifier("Partner")),
+                                new ConstantKey(Name.value(" "), Name.identifier("Partner")),
+                                new AttributeBasedKey(null, Triple.edge(Name.identifier("Customer"), Name.identifier("lastname"), Name.identifier("String")), Name.identifier("Partner")))));
 
         QueryCursor.ConcatMergeCursor partnersRoot = new QueryCursor.ConcatMergeCursor(sel("partners", true, true),
                 threeEntryMap(leftKey, customersRoot, middleKey

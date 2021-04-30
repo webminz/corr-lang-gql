@@ -410,13 +410,13 @@ public class GraphQLQuery implements QueryTree {
             this.messageReturnsTyping = messageReturnsTyping;
         }
 
-        public QueryCursor createGlobalCursor(Set<Key> keys, List<Sys> locals) {
-            if (keys.stream().anyMatch(k -> k.targetType().equals(messageReturnsTyping.getTarget()))) {
+        public QueryCursor createGlobalCursor(Name comprSchemaName, Set<Key> keys, List<Sys> locals) {
+            if (keys.stream().anyMatch(k -> k.targetType().prefixWith(comprSchemaName).equals(messageReturnsTyping.getTarget()))) {
                 Multimap<String, Key> keysMap = ArrayListMultimap.create();
                 for (Sys local : locals) {
                     keys.stream()
-                            .filter(k -> k.targetType().equals(messageReturnsTyping.getTarget()))
-                            .filter(k -> k.requiredProperties().stream().allMatch(t -> local.schema().carrier().contains(t)))
+                            .filter(k -> k.targetType().prefixWith(comprSchemaName).equals(messageReturnsTyping.getTarget()))
+                            .filter(k -> k.sourceSystem().equals(local))
                             .forEach(k -> keysMap.put(local.url(),k));
                 }
                 this.cursor = new QueryCursor.ConcatMergeCursor(this, new LinkedHashMap<>(), keysMap);
@@ -500,7 +500,7 @@ public class GraphQLQuery implements QueryTree {
     public Map<Sys, GraphQLQuery> split(ComprSys comprSys, List<Sys> locals) {
         LinkedHashMap<Sys, GraphQLQuery> result = new LinkedHashMap<>();
         for (GraphQLQuery.QueryRoot root : this.roots) {
-            root.createGlobalCursor(comprSys.keys().collect(Collectors.toSet()), locals);
+            root.createGlobalCursor(comprSys.schema().getName(), comprSys.keys().collect(Collectors.toSet()), locals);
         }
         for (Sys local : locals) {
             this.localize(comprSys, local).ifPresent(q ->result.put(local, q));

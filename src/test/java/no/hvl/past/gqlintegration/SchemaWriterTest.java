@@ -344,16 +344,16 @@ public class SchemaWriterTest extends GraphQLTest {
         Sketch result = sketch.restrict(Arrays.asList(qm, qm2));
 
         String expected = "type Query {\n" +
-                "\tread_left : [A]\n" +
-                "\tread_right : [B]\n" +
+                "   read_left : [A]\n" +
+                "   read_right : [B]\n" +
                 "}\n" +
-                "\n" +
+                "" +
                 "type A {\n" +
-                "\tcontent : String!\n" +
+                "   content : String!\n" +
                 "}\n" +
                 "\n" +
                 "type B {\n" +
-                "\ttext : String!\n" +
+                "   text : String!\n" +
                 "}\n\n";
 
         testExpectedSchema(result, expected);

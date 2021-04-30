@@ -1,5 +1,7 @@
-package no.hvl.past.gqlintegration;
+package no.hvl.past.gqlintegration.integration;
 
+import no.hvl.past.gqlintegration.GraphQLAdapter;
+import no.hvl.past.gqlintegration.GraphQLTest;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.names.Name;

@@ -309,7 +309,6 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
 //    }
 //
 //    private boolean isListValued(Triple edge) {
-//        // TODO replace with a respective method in system
 //        return comprSys.schema().diagramsOn(edge).noneMatch(diag -> TargetMultiplicity.class.isAssignableFrom(diag.label().getClass()) && ((TargetMultiplicity) diag.label()).getUpperBound() <= 1);
 //    }
 //
@@ -319,6 +318,9 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
 //
 //    // TODO remove
 //    private final Map<Name, Map<Sys, JsonNode>> objectCursorCache;
+
+
+    // TODO the System.out println must be replaced with logger output and should be configurable from the outside
 
     private ComprSys comprSys;
     private Map<Sys, QueryHandler> localHandlers;
@@ -342,7 +344,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             LocalDateTime parseStart = LocalDateTime.now();
             TypedTree typedTree = deserialize(i);
             LocalDateTime parseEnd = LocalDateTime.now();
-            System.out.println("Query parsing: " + Duration.between(parseStart, parseEnd).toMillis() + " ms");
+       //     System.out.println("Query parsing: " + Duration.between(parseStart, parseEnd).toMillis() + " ms");
 
             if (typedTree instanceof IntrospectionQuery) {
                 this.handleIntrospectionQuery((IntrospectionQuery) typedTree, o);
@@ -394,7 +396,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             globalResults.put(ep, jsonNode);
         }
         LocalDateTime localQRepsParseStop = LocalDateTime.now();
-        System.out.println("Parsing Response from local Query: " + Duration.between(localQRepsParse, localQRepsParseStop).toMillis() + " ms");
+       // System.out.println("Parsing Response from local Query: " + Duration.between(localQRepsParse, localQRepsParseStop).toMillis() + " ms");
 
         LocalDateTime startMerge = LocalDateTime.now();
         for (GraphQLQuery.QueryRoot queryRoot : originalQuery.getRoots()) {
@@ -407,7 +409,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             cursor.processOne(generator);
         }
         LocalDateTime finishMerge = LocalDateTime.now();
-        System.out.println("Merging Query Response: " + Duration.between(startMerge, finishMerge).toMillis() + " ms");
+      //  System.out.println("Merging Query Response: " + Duration.between(startMerge, finishMerge).toMillis() + " ms");
 
 
 //        for (QueryNode.Root root : originalQuery.queryRoots().collect(Collectors.toList())) {
@@ -448,7 +450,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
         generator.writeEndObject();
         generator.writeEndObject();
         generator.flush();
-        System.out.println(wiretap.getRecorded());
+      //  System.out.println(wiretap.getRecorded());
 
         outputStream.close();
     }
@@ -463,7 +465,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             }
         }
         LocalDateTime qSendEnd = LocalDateTime.now();
-        System.out.println("Local Query Request/Response: " + Duration.between(qSendStart, qSendEnd).toMillis() + " ms");
+      //  System.out.println("Local Query Request/Response: " + Duration.between(qSendStart, qSendEnd).toMillis() + " ms");
 
         return localQueryResults;
     }
@@ -473,7 +475,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
         LocalDateTime splitStart = LocalDateTime.now();
         Map<Sys, GraphQLQuery> result =  query.split(comprSys, new ArrayList<>(this.localHandlers.keySet()));
         LocalDateTime splitEnd = LocalDateTime.now();
-        System.out.println("Query Splitting: " + Duration.between(splitStart, splitEnd).toMillis() + " ms");
+   //     System.out.println("Query Splitting: " + Duration.between(splitStart, splitEnd).toMillis() + " ms");
         return result;
     }
 

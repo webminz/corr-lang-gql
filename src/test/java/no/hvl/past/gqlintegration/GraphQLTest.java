@@ -17,7 +17,7 @@ import java.io.IOException;
 
 import static org.junit.Assume.assumeTrue;
 
-abstract class GraphQLTest extends TestBase {
+public abstract class GraphQLTest extends TestBase {
 
     private DependencyInjectionContainer container;
 

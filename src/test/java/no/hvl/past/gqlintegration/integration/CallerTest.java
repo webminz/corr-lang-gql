@@ -1,9 +1,11 @@
-package no.hvl.past.gqlintegration;
+package no.hvl.past.gqlintegration.integration;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import no.hvl.past.gqlintegration.GraphQLAdapter;
+import no.hvl.past.gqlintegration.GraphQLTest;
 import no.hvl.past.gqlintegration.queries.GraphQLQuery;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.trees.QueryHandler;
@@ -91,38 +93,5 @@ public class CallerTest extends GraphQLTest {
     // TODO testcase with a field query
 
 
-//    @Test
-//    public void testDynamicResolver() throws GraphError, JsonProcessingException {
-//        String schema = "type Query {\n" +
-//                "  customers: [Customer]\n" +
-//                "}\n" +
-//                "type Customer {\n" +
-//                "  name: String\n" +
-//                "  email: String\n" +
-//                "}";
-//        GraphQLSchema graphQLSchema = parseSchemaAsText(schema);
-//        Sketch test = new GraphQLSchemaReader(getUniverseForTest()).convert(Name.identifier("test"), graphQLSchema);
-//        GraphQLQueryHandler handler = new GraphQLQueryDelegator("http://localhost:4011");
-//        DynamicQueryResolver dynResolver = new DynamicQueryResolver(handler, test);
-//
-//        TypeDefinitionRegistry typeReg = new SchemaParser().parse(schema);
-//        RuntimeWiring runtimeWiring = RuntimeWiring.newRuntimeWiring()
-//                .type(TypeRuntimeWiring.newTypeWiring("Query").defaultDataFetcher(dynResolver))
-//                .type(TypeRuntimeWiring.newTypeWiring("Customer").defaultDataFetcher(new JsonDataFetcher()))
-//                .build();
-//        GraphQLSchema executableSchema = new SchemaGenerator().makeExecutableSchema(typeReg, runtimeWiring);
-//        GraphQL graphQL = GraphQL.newGraphQL(executableSchema).build();
-//        ExecutionResult result = graphQL.execute("query {\n" +
-//                "  customers {\n" +
-//                "      name\n" +
-//                "  }\n" +
-//                "}");
-//
-//        Map<String, Object> spec = result.toSpecification();
-//        ObjectMapper objectMapper = new ObjectMapper();
-//        System.out.println(objectMapper.writeValueAsString(spec).toString());
-//        assertTrue(spec.toString().contains("Ban Geyton"));
-//        assertTrue(spec.toString().contains("Ferrell Leethem"));
-//        assertTrue(spec.toString().contains("Selinda Streader"));
-//    }
+
 }
