@@ -2,7 +2,10 @@ package no.hvl.past.gqlintegration.schema;
 
 
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.schema.*;
+import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
 import no.hvl.past.gqlintegration.predicates.*;
 import no.hvl.past.graph.*;
@@ -13,7 +16,7 @@ import no.hvl.past.names.Name;
 import no.hvl.past.names.PrintingStrategy;
 import no.hvl.past.plugin.UnsupportedFeatureException;
 import no.hvl.past.systems.MessageArgument;
-import no.hvl.past.systems.MessageType;
+import no.hvl.past.systems.MessageContainer;
 import no.hvl.past.util.Pair;
 
 
@@ -22,14 +25,6 @@ import java.util.stream.Collectors;
 
 public class GraphQLSchemaReader {
 
-
-    public Set<QueryMesage> getQueries() {
-        return this.queryMesages;
-    }
-
-    public Set<MutationMessage> getMuations() {
-        return this.mutationMessages;
-    }
 
     public String getQueryTypeName() {
         return this.queryTypeName;
@@ -44,13 +39,15 @@ public class GraphQLSchemaReader {
         private final boolean hasSideEffect;
         private final List<Triple> arguments;
         private final Triple returnType;
+        private final MessageContainer container;
 
 
-        public MessageType(Name name, boolean hasSideEffect, List<Triple> arguments, Triple returnType) {
+        public MessageType(Name name, boolean hasSideEffect, List<Triple> arguments, Triple returnType, MessageContainer container) {
             this.name = name;
             this.hasSideEffect = hasSideEffect;
             this.arguments = arguments;
             this.returnType = returnType;
+            this.container = container;
         }
     }
 
@@ -77,8 +74,6 @@ public class GraphQLSchemaReader {
     private List<Pair<GraphQLArgument, Triple>> arguments;
     private Map<Name, String> nameToText;
     private List<MessageType> messageTypes;
-    private Set<QueryMesage> queryMesages = new LinkedHashSet<>();
-    private Set<MutationMessage> mutationMessages = new LinkedHashSet<>();
     private Set<GraphQLInputObjectType> inputTypes = new LinkedHashSet<>();
     private String queryTypeName = "Query";
     private String mutationTypeName = "Mutation";
@@ -88,7 +83,12 @@ public class GraphQLSchemaReader {
 
     }
 
-    public Sketch convert(Name resultName, GraphQLSchema schema) throws GraphError, UnsupportedFeatureException {
+    public GraphQLEndpoint convert(
+            String url,
+            Name resultName,
+            GraphQLSchema schema,
+            ObjectMapper om,
+            JsonFactory jsonFactory) throws GraphError, UnsupportedFeatureException {
         this.typeMapping = new HashMap<>();
         this.edges = new ArrayList<>();
         this.scalarTypes = new HashSet<>();
@@ -169,8 +169,9 @@ public class GraphQLSchemaReader {
             if (!this.queryTypeName.equals(schema.getQueryType().getName())) {
                 this.queryTypeName = schema.getQueryType().getName();
             }
+            builders.node(queryTypeName);
             for (GraphQLFieldDefinition querOp : schema.getQueryType().getFieldDefinitions()) {
-                convertMessage(querOp, false, schema.getQueryType().getName());
+                convertMessage(querOp, false, new MessageContainer(Name.identifier(schema.getQueryType().getName())));
             }
         }
 
@@ -178,8 +179,9 @@ public class GraphQLSchemaReader {
             if (!this.mutationTypeName.equals(schema.getMutationType().getName())) {
                 this.mutationTypeName = schema.getMutationType().getName();
             }
+            builders.node(mutationTypeName);
             for (GraphQLFieldDefinition querOp : schema.getMutationType().getFieldDefinitions()) {
-                convertMessage(querOp, true, schema.getMutationType().getName());
+                convertMessage(querOp, true, new MessageContainer(Name.identifier(schema.getMutationType().getName())));
             }
         }
 
@@ -249,43 +251,58 @@ public class GraphQLSchemaReader {
         Sketch result = builders.getResult(Sketch.class);
 
 
-        List<Diagram> msgs = new ArrayList<>();
+        EntryPointType queries = new EntryPointType("Query");
+        EntryPointType mutations = new EntryPointType("Mutation");
+        if (schema.getQueryType() != null) {
+            queries.setName(schema.getQueryType().getName());
+        }
+        if (schema.getMutationType() != null) {
+            mutations.setName(schema.getMutationType().getName());
+        }
+        Map<Name, no.hvl.past.systems.MessageType> messageTypeMap = new HashMap<>();
+
+
         for (MessageType msgType : this.messageTypes) {
             List<MessageArgument> args = new ArrayList<>();
-            GraphQLMessage msg;
+            List<MessageArgument> output = new ArrayList<>();
+            no.hvl.past.systems.MessageType msg;
             if (msgType.hasSideEffect) {
-                   msg = new MutationMessage(result.carrier(), msgType.name, schema.getMutationType().getName(), this.nameToText.get(msgType.name), args);
-                   this.mutationMessages.add((MutationMessage) msg);
+                msg = new no.hvl.past.systems.MessageType(msgType.name, args, output, msgType.container , true);
+                mutations.addMessage(msg);
             } else {
-                msg = new QueryMesage(result.carrier(), msgType.name, schema.getQueryType().getName(), this.nameToText.get(msgType.name), args);
-                this.queryMesages.add((QueryMesage) msg);
+                msg = new no.hvl.past.systems.MessageType(msgType.name, args, output, msgType.container, false);
+                queries.addMessage(msg);
             }
-            ListIterator<Triple> iterator = msgType.arguments.listIterator();
-            while (iterator.hasNext()) {
-                int idx = iterator.nextIndex();
-                Triple arg = iterator.next();
-                MessageArgument msgArg = new MessageArgument(msg, arg.getLabel(), arg.getTarget(), idx, false);
-                args.add(msgArg);
-                msgs.add(msgArg);
+            messageTypeMap.put(msgType.name, msg);
+            for (Triple t : msgType.arguments) {
+                args.add(new MessageArgument(msg, t, args.size(), false));
             }
-            MessageArgument msgArg = new MessageArgument(msg, msgType.returnType.getLabel(), msgType.returnType.getTarget(), 0, true);
-            args.add(msgArg);
-            msgs.add(msgArg);
-            msgs.add(msg);
+            output.add(new MessageArgument(msg, msgType.returnType, 0, true));
         }
 
-
-
-        return result.restrict(msgs);
+        return new GraphQLEndpoint(
+                url,
+                result,
+                nameToText,
+                messageTypeMap,
+                multiplicities,
+                queries,
+                mutations,
+                om,
+                jsonFactory
+        );
     }
 
 
 
 
-    private void convertMessage(GraphQLFieldDefinition op, boolean hasSideEffect, String ownerName) {
-        Name msgName = Name.identifier(ownerName + "." + op.getName());
+    private void convertMessage(GraphQLFieldDefinition op, boolean hasSideEffect, MessageContainer owner) {
+        // Making a node for the message type
+        Name msgName = Name.identifier(op.getName()).prefixWith(owner.getTypeName());
         List<Triple> msgArgs = new ArrayList<>();
         builders.node(msgName);
+
+        // Adding all args as message input edges
         for (GraphQLArgument arg : op.getArguments()) {
             this.mandatory = false;
             this.listValued = false;
@@ -297,16 +314,21 @@ public class GraphQLSchemaReader {
             this.edges.add(edge);
             this.multiplicities.add(new FieldMult(argumentName, listValued, mandatory));
         }
+
+        // Adding the return type as a message output egde
         this.mandatory = false;
         this.listValued = false;
         Name returnType = convertResultType(op.getType());
+        // TODO MAGIC NAMES: replace this one
         Name returnTypeEdgeLabel = Name.identifier("result").prefixWith(msgName);
         this.nameToText.put(returnTypeEdgeLabel, op.getName());
         this.nameToText.put(msgName, op.getName());
         builders.edge(msgName, returnTypeEdgeLabel, returnType);
         this.edges.add(Triple.edge(msgName, returnTypeEdgeLabel, returnType));
+
         this.multiplicities.add(new FieldMult(returnTypeEdgeLabel, listValued, mandatory));
-        this.messageTypes.add(new MessageType(msgName, hasSideEffect, msgArgs, Triple.edge(msgName, returnTypeEdgeLabel, returnType)));
+
+        this.messageTypes.add(new MessageType(msgName, hasSideEffect, msgArgs, Triple.edge(msgName, returnTypeEdgeLabel, returnType), owner));
     }
 
     private void handleScalarType(String scalarType) {

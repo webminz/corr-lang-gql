@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Multimap;
+import no.hvl.past.graph.trees.TreeCreator;
 import no.hvl.past.keys.Key;
 import no.hvl.past.keys.KeyNotEvaluated;
 import no.hvl.past.names.AnonymousIdentifier;
@@ -44,34 +45,30 @@ public abstract class QueryCursor {
         return queryNode;
     }
 
-    public void enter(JsonGenerator generator) throws IOException {
-        generator.writeFieldName(getQueryNode().field());
-        if (getQueryNode().isListValued()) {
-            generator.writeStartArray();
-        }
+    public void enter(TreeCreator creator) throws IOException {
+        creator.startBranch(getQueryNode().field(), getQueryNode().isListValued());
+
     }
-    public void enterChild(JsonGenerator generator) throws IOException {
+    public void enterChild(TreeCreator creator) throws IOException {
         if (getQueryNode().isComplex()) {
-            generator.writeStartObject();
+            creator.startComplexChild();
         }
 
     }
-    public abstract void atomic(JsonGenerator generator) throws IOException;
+    public abstract void atomic(TreeCreator creator) throws IOException;
 
-    public void leaveChild(JsonGenerator generator) throws IOException {
+    public void leaveChild(TreeCreator creator) throws IOException {
         if (getQueryNode().isComplex()) {
-            generator.writeEndObject();
+            creator.endComplexChild();
         }
     }
 
 
-    public void leave(JsonGenerator generator) throws IOException {
-        if (getQueryNode().isListValued()) {
-            generator.writeEndArray();
-        }
+    public void leave(TreeCreator creator) throws IOException {
+        creator.endBranch();
     }
 
-    public abstract void processOne(JsonGenerator generator) throws IOException;
+    public abstract void processOne(TreeCreator creator) throws IOException;
 
 
     List<QueryCursor> getChildrenPos() {
@@ -91,29 +88,35 @@ public abstract class QueryCursor {
         }
 
         @Override
-        public void atomic(JsonGenerator generator) throws IOException {
+        public void atomic(TreeCreator creator) throws IOException {
             if ((this.result.isEmpty() || this.result.get(0).isEmpty()) && !getQueryNode().isListValued()) {
-                generator.writeNull();
+                creator.empty();
             } else {
                 for (JsonNode v : this.result.get(0)) {
-                    value(generator, v);
+                    value(creator, v);
                 }
             }
         }
 
-        private void value(JsonGenerator generator, JsonNode v) throws IOException {
+        private void value(TreeCreator creator, JsonNode v) throws IOException {
+            Name value;
             if (v.isTextual()) {
-                generator.writeString(v.asText());
+                value = Name.value(v.textValue());
             } else if (v.isIntegralNumber()) {
-                generator.writeNumber(v.asLong());
+                value = Name.value(v.longValue());
             } else if (v.isFloatingPointNumber()) {
-                generator.writeNumber(v.asDouble());
+                value = Name.value(v.doubleValue());
             } else if (v.isBoolean()) {
-                generator.writeBoolean(v.asBoolean());
+                value = v.booleanValue() ? Name.trueValue() : Name.falseValue();
             } else if (v.isNull()) {
-                generator.writeNull();
+                value = null;
             } else {
-                generator.writeRaw(v.toString());
+                value = Name.identifier(v.toString());
+            }
+            if (value == null) {
+                creator.empty();
+            } else {
+                creator.simpleChild(value);
             }
         }
 
@@ -126,7 +129,7 @@ public abstract class QueryCursor {
         }
 
         @Override
-        public void processOne(JsonGenerator generator) throws IOException {
+        public void processOne(TreeCreator generator) throws IOException {
             if (!this.result.isEmpty()) {
                 enter(generator);
                 if (this.getQueryNode().isComplex()) {
@@ -144,9 +147,9 @@ public abstract class QueryCursor {
             this.result.remove(0);
         }
 
-        private void complex(JsonGenerator generator) throws IOException {
+        private void complex(TreeCreator generator) throws IOException {
             if (this.result.get(0).isEmpty() && !getQueryNode().isListValued()) {
-                generator.writeNull();
+                generator.empty();
             } else {
                 for (int i = 0; i < getWidth(); i++) {
                     enterChild(generator);
@@ -209,7 +212,7 @@ public abstract class QueryCursor {
             this.localCursors.put(sysKey, localCursor);
         }
 
-         Map<String, LocalCursor> getLocalCursors() {
+        Map<String, LocalCursor> getLocalCursors() {
             return localCursors;
         }
 
@@ -222,7 +225,7 @@ public abstract class QueryCursor {
         }
 
         @Override
-        public void atomic(JsonGenerator generator) throws IOException {
+        public void atomic(TreeCreator generator) throws IOException {
 //            for (String key : this.localCursors.keySet()) {
 //                this.localCursors.get(key).atomic(generator);
 //            }
@@ -236,14 +239,14 @@ public abstract class QueryCursor {
 //            this.localCursors.get(next).atomic(generator);
         }
 
-        public void processOneForBranch(String key, JsonGenerator generator) throws IOException {
+        public void processOneForBranch(String key, TreeCreator generator) throws IOException {
             enter(generator);
             if (!getQueryNode().isComplex()) {
                 atomic(key, generator);
             } else {
                 if (!localCursors.containsKey(key)) {
                     if (!getQueryNode().isListValued()) {
-                        generator.writeNull();
+                        generator.empty();
                     }
                 } else {
                     int width = this.localCursors.get(key).getWidth();
@@ -264,19 +267,19 @@ public abstract class QueryCursor {
             leave(generator);
         }
 
-        private void atomic(String key, JsonGenerator generator) throws IOException {
+        private void atomic(String key, TreeCreator generator) throws IOException {
             if (this.localCursors.containsKey(key)) {
                 this.localCursors.get(key).atomic(generator);
                 if (!localCursors.get(key).result.isEmpty()) {
                     this.localCursors.get(key).result.remove(0);
                 }
             } else if (!getQueryNode().isListValued()) {
-                generator.writeNull();
+                generator.empty();
             }
         }
 
         @Override
-        public void processOne(JsonGenerator generator) throws IOException {
+        public void processOne(TreeCreator generator) throws IOException {
             enter(generator);
             if (!getQueryNode().isComplex()) {
                 atomic(generator);
@@ -297,7 +300,7 @@ public abstract class QueryCursor {
                     }
                 }
                 if (!hadValue && !getQueryNode().isListValued()) {
-                    generator.writeNull();
+                    generator.empty();
                 }
             }
             leave(generator);
@@ -435,7 +438,7 @@ public abstract class QueryCursor {
         }
 
         @Override
-        public void processOne(JsonGenerator generator) throws IOException {
+        public void processOne(TreeCreator generator) throws IOException {
             enter(generator);
             if (!getQueryNode().isComplex()) {
                 atomic(generator); // TODO overwrite with merging beahvior

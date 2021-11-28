@@ -7,12 +7,11 @@ import no.hvl.past.gqlintegration.queries.*;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.graph.*;
 import no.hvl.past.graph.elements.Triple;
-import no.hvl.past.graph.trees.QueryHandler;
+import no.hvl.past.systems.QueryHandler;
 import no.hvl.past.graph.trees.Tree;
 import no.hvl.past.names.Name;
 import no.hvl.past.systems.ComprSys;
 import no.hvl.past.systems.Sys;
-import no.hvl.past.util.Pair;
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -20,7 +19,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -77,16 +75,13 @@ public class QuerySplittingTest extends GraphQLTest{
         ObjectMapper om = new ObjectMapper(jsonFactory);
 
         GraphQLSchemaReader converter = new GraphQLSchemaReader(getUniverseForTest());
-        Sketch ep1Schema = converter.convert(Name.identifier("EP1"), parseSchemaAsText(ENDPOINT1_SCHEMA));
-        GraphQLEndpoint ep1 = new GraphQLEndpoint("http://1", ep1Schema, converter.getNameToText(), converter.getMultiplicities(), converter.getQueries(), converter.getMuations(), om, jsonFactory, converter.getQueryTypeName(), converter.getMutationTypeName());
+        GraphQLEndpoint ep1 = converter.convert("http://1", Name.identifier("EP1"), parseSchemaAsText(ENDPOINT1_SCHEMA), om, jsonFactory);
 
         converter = new GraphQLSchemaReader(getUniverseForTest());
-        Sketch ep2Schema = converter.convert(Name.identifier("EP2"), parseSchemaAsText(ENDPOINT2_SCHEMA));
-        GraphQLEndpoint ep2 = new GraphQLEndpoint("http://2", ep2Schema, converter.getNameToText(), converter.getMultiplicities(), converter.getQueries(), converter.getMuations(), om, jsonFactory, converter.getQueryTypeName(), converter.getMutationTypeName());
+        GraphQLEndpoint ep2 = converter.convert("http://2", Name.identifier("EP2"), parseSchemaAsText(ENDPOINT2_SCHEMA), om, jsonFactory);
 
         converter = new GraphQLSchemaReader(getUniverseForTest());
-        Sketch ep3Schema = converter.convert(Name.identifier("EP3"), parseSchemaAsText(ENDPOINT3_SCHEMA));
-        GraphQLEndpoint ep3 = new GraphQLEndpoint("http://3", ep3Schema, converter.getNameToText(), converter.getMultiplicities(), converter.getQueries(), converter.getMuations(), om, jsonFactory, converter.getQueryTypeName(), converter.getMutationTypeName());
+        GraphQLEndpoint ep3 = converter.convert("http://3",Name.identifier("EP3"), parseSchemaAsText(ENDPOINT3_SCHEMA),om, jsonFactory);
 
 
 
@@ -94,7 +89,8 @@ public class QuerySplittingTest extends GraphQLTest{
 
 
         Sketch result = builders
-                .edge(Name.identifier("Query.r"), Name.identifier("result").prefixWith(Name.identifier("Query.r")), Name.identifier("R"))
+                .node(Name.identifier("Query"))
+                .edge(Name.identifier("r").prefixWith(Name.identifier("Query")), Name.identifier("result").prefixWith(Name.identifier("r").prefixWith(Name.identifier("Query"))), Name.identifier("R"))
                 .edge(Name.identifier("R"), Name.identifier("a").prefixWith(Name.identifier("R")), Name.identifier("A"))
                 .edge(Name.identifier("R"), Name.identifier("b").prefixWith(Name.identifier("R")), Name.identifier("B"))
                 .edge(Name.identifier("B"), Name.identifier("z").prefixWith(Name.identifier("B")), Name.identifier("String"))
@@ -103,9 +99,10 @@ public class QuerySplittingTest extends GraphQLTest{
                 .getResult(Sketch.class);
 
         GraphMorphism p1 = builders.domain(result.carrier())
-                .codomain(ep1Schema.carrier())
-                .map(Name.identifier("Query.r"), Name.identifier("Query.r"))
-                .map(Name.identifier("result").prefixWith(Name.identifier("Query.r")), Name.identifier("result").prefixWith(Name.identifier("Query.r")))
+                .codomain(ep1.schema().carrier())
+                .map(Name.identifier("Query"), Name.identifier("Query"))
+                .map(Name.identifier("r").prefixWith(Name.identifier("Query")), Name.identifier("r").prefixWith(Name.identifier("Query")))
+                .map(Name.identifier("result").prefixWith(Name.identifier("r").prefixWith(Name.identifier("Query"))), Name.identifier("result").prefixWith(Name.identifier("r").prefixWith(Name.identifier("Query"))))
                 .map(Name.identifier("R"), Name.identifier("R1"))
                 .map(Name.identifier("a").prefixWith(Name.identifier("R")), Name.identifier("a").prefixWith(Name.identifier("R1")))
                 .map(Name.identifier("A"), Name.identifier("A1"))
@@ -114,9 +111,10 @@ public class QuerySplittingTest extends GraphQLTest{
                 .getResult(GraphMorphism.class);
 
         GraphMorphism p2 = builders.domain(result.carrier())
-                .codomain(ep2Schema.carrier())
-                .map(Name.identifier("Query.r"), Name.identifier("Query.r"))
-                .map(Name.identifier("result").prefixWith(Name.identifier("Query.r")), Name.identifier("result").prefixWith(Name.identifier("Query.r")))
+                .codomain(ep2.schema().carrier())
+                .map(Name.identifier("Query"), Name.identifier("Query"))
+                .map(Name.identifier("r").prefixWith(Name.identifier("Query")), Name.identifier("r").prefixWith(Name.identifier("Query")))
+                .map(Name.identifier("result").prefixWith(Name.identifier("r").prefixWith(Name.identifier("Query"))), Name.identifier("result").prefixWith(Name.identifier("r").prefixWith(Name.identifier("Query"))))
                 .map(Name.identifier("R"), Name.identifier("R2"))
                 .map(Name.identifier("a").prefixWith(Name.identifier("R")), Name.identifier("a").prefixWith(Name.identifier("R2")))
                 .map(Name.identifier("b").prefixWith(Name.identifier("R")), Name.identifier("b").prefixWith(Name.identifier("R2")))
@@ -128,9 +126,10 @@ public class QuerySplittingTest extends GraphQLTest{
                 .getResult(GraphMorphism.class);
 
         GraphMorphism p3 = builders.domain(result.carrier())
-                .codomain(ep3Schema.carrier())
-                .map(Name.identifier("Query.r"), Name.identifier("Query.r"))
-                .map(Name.identifier("result").prefixWith(Name.identifier("Query.r")), Name.identifier("result").prefixWith(Name.identifier("Query.r")))
+                .codomain(ep3.schema().carrier())
+                .map(Name.identifier("Query"), Name.identifier("Query"))
+                .map(Name.identifier("r").prefixWith(Name.identifier("Query")), Name.identifier("r").prefixWith(Name.identifier("Query")))
+                .map(Name.identifier("result").prefixWith(Name.identifier("r").prefixWith(Name.identifier("Query"))), Name.identifier("result").prefixWith(Name.identifier("r").prefixWith(Name.identifier("Query"))))
                 .map(Name.identifier("R"), Name.identifier("R3"))
                 .map(Name.identifier("b").prefixWith(Name.identifier("R")), Name.identifier("b").prefixWith(Name.identifier("R3")))
                 .map(Name.identifier("z").prefixWith(Name.identifier("B")), Name.identifier("z3").prefixWith(Name.identifier("B3")))
@@ -142,14 +141,14 @@ public class QuerySplittingTest extends GraphQLTest{
         Star federation = new StarImpl(
                 Name.identifier("federation"),
                 result,
-                Arrays.asList(ep1Schema, ep2Schema, ep3Schema),
+                Arrays.asList(ep1.schema(), ep2.schema(), ep3.schema()),
                 Arrays.asList(p1, p2, p3));
 
 
         GraphQLQueryHandler ep1Handler = new GraphQLQueryHandler(ep1) {
 
             @Override
-            public void handle(InputStream i, OutputStream o) throws IOException {
+            public void handle(InputStream i, OutputStream o) throws Exception {
                 Tree tree = deserialize(i);
                 assertTrue(tree instanceof GraphQLQuery);
                 GraphQLQuery actual = (GraphQLQuery) tree;
@@ -158,7 +157,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 GraphQLQuery.Node x = new GraphQLQuery.Node("x", Name.identifier("String"));
                 root.addChild(a, Triple.edge(Name.identifier("R1"), Name.identifier("a").prefixWith(Name.identifier("R1")), Name.identifier("A1")), true, true);
                 a.addChild(x, Triple.edge(Name.identifier("A1"), Name.identifier("x").prefixWith(Name.identifier("A1")), Name.identifier("String")), false, false);
-                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep1Schema, Name.anonymousIdentifier());
+                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep1, Name.anonymousIdentifier());
 
                 assertEquals(expected.textualRepresentation(), actual.textualRepresentation());
                 JsonGenerator generator = new JsonFactory().createGenerator(o);
@@ -201,7 +200,7 @@ public class QuerySplittingTest extends GraphQLTest{
         GraphQLQueryHandler ep2Handler = new GraphQLQueryHandler(ep2) {
 
             @Override
-            public void handle(InputStream i, OutputStream o) throws IOException {
+            public void handle(InputStream i, OutputStream o) throws Exception {
                 Tree tree = deserialize(i);
                 assertTrue(tree instanceof GraphQLQuery);
                 GraphQLQuery actual = (GraphQLQuery) tree;
@@ -214,7 +213,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 root.addChild(b, Triple.edge(Name.identifier("R2"), Name.identifier("b").prefixWith(Name.identifier("R2")), Name.identifier("B2")), true, true);
                 a.addChild(y, Triple.edge(Name.identifier("A2"), Name.identifier("y").prefixWith(Name.identifier("A2")), Name.identifier("Int")), false, false);
                 b.addChild(z, Triple.edge(Name.identifier("B2"), Name.identifier("z2").prefixWith(Name.identifier("B2")), Name.identifier("String")), false, false);
-                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep2Schema, Name.anonymousIdentifier());
+                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep2, Name.anonymousIdentifier());
                 assertEquals(expected.textualRepresentation(), actual.textualRepresentation());
                 JsonGenerator generator = new JsonFactory().createGenerator(o);
                 generator.writeStartObject();
@@ -251,7 +250,7 @@ public class QuerySplittingTest extends GraphQLTest{
 
 
             @Override
-            public void handle(InputStream i, OutputStream o) throws IOException {
+            public void handle(InputStream i, OutputStream o) throws Exception {
                 Tree tree = deserialize(i);
                 assertTrue(tree instanceof GraphQLQuery);
                 GraphQLQuery actual = (GraphQLQuery) tree;
@@ -261,7 +260,7 @@ public class QuerySplittingTest extends GraphQLTest{
                 GraphQLQuery.Node z = new GraphQLQuery.Node("z3", Name.identifier("String"));
                 root.addChild(b, Triple.edge(Name.identifier("R3"), Name.identifier("b").prefixWith(Name.identifier("R3")), Name.identifier("B3")), true, true);
                 b.addChild(z, Triple.edge(Name.identifier("B3"), Name.identifier("z3").prefixWith(Name.identifier("B3")), Name.identifier("String")), false, false);
-                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep3Schema, Name.anonymousIdentifier());
+                GraphQLQuery expected = new GraphQLQuery(Collections.singletonList(root), ep3, Name.anonymousIdentifier());
 
                 assertEquals(expected.textualRepresentation(), actual.textualRepresentation());
                 JsonGenerator generator = new JsonFactory().createGenerator(o);
@@ -330,7 +329,7 @@ public class QuerySplittingTest extends GraphQLTest{
         root.addChild(a, Triple.edge(Name.identifier("R"), Name.identifier("a").prefixWith(Name.identifier("R")), Name.identifier("A")), true, true);
         root.addChild(b, Triple.edge(Name.identifier("R"), Name.identifier("b").prefixWith(Name.identifier("R")), Name.identifier("B")), true, true);
 
-        GraphQLQuery query = new GraphQLQuery(Collections.singletonList(root), cs.schema(), Name.anonymousIdentifier());
+        GraphQLQuery query = new GraphQLQuery(Collections.singletonList(root), cs, Name.anonymousIdentifier());
 
 
 

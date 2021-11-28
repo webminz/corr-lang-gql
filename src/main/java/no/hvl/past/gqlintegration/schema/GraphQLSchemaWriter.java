@@ -3,7 +3,6 @@ package no.hvl.past.gqlintegration.schema;
 import com.google.common.collect.Sets;
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
 import no.hvl.past.gqlintegration.predicates.InputType;
-import no.hvl.past.gqlintegration.predicates.MutationMessage;
 import no.hvl.past.graph.*;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.elements.Tuple;
@@ -14,10 +13,9 @@ import no.hvl.past.names.Prefix;
 import no.hvl.past.names.PrintingStrategy;
 import no.hvl.past.systems.MessageArgument;
 import no.hvl.past.systems.MessageType;
+import no.hvl.past.systems.Sys;
 import no.hvl.past.util.StreamExt;
 import no.hvl.past.util.StringUtils;
-import org.apache.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.BufferedWriter;
 import java.io.IOException;
@@ -134,7 +132,7 @@ public class GraphQLSchemaWriter implements Visitor {
 
 
 
-    private  final class ContainerChild {
+    private final class ContainerChild {
         private final Name edgeLabel;
         private final Name ownerName;
         private Name targetName;
@@ -255,12 +253,15 @@ public class GraphQLSchemaWriter implements Visitor {
     private Container queryContainer;
     private Container mutationContainer;
 
-    public GraphQLSchemaWriter() {
+    private final Sys system;
+
+    public GraphQLSchemaWriter(Sys system) {
         this.nameToText.put(Name.identifier("String"), "String");
         this.nameToText.put(Name.identifier("Int"), "Int");
         this.nameToText.put(Name.identifier("ID"), "ID");
         this.nameToText.put(Name.identifier("Boolean"), "Boolean");
         this.nameToText.put(Name.identifier("Float"), "Float");
+        this.system = system;
     }
 
     @Override
@@ -281,12 +282,18 @@ public class GraphQLSchemaWriter implements Visitor {
 
     @Override
     public void handleNode(Name node) {
-        if (node.equals(Name.identifier("Subscription"))) { // not supported
+        if (node.equals(Name.identifier("Subscription")) || system.isMessageContainer(node)) { // not supported
             return;
         }
 
+
         if (!ignoreElementsNow) {
-            if (! BUILTIN_SCALARS.contains(node.unprefixAll())) {
+
+            if (system.isMessageType(node)) {
+                MessageType messageType = system.getMessageType(node);
+                ContainerChild message = createMessageContainerIfNeeded(messageType);
+                messageType.arguments().forEach(arg -> this.handleMsgArg(arg,message));
+            } else if (! BUILTIN_SCALARS.contains(node.unprefixAll())) {
                 this.typeMap.put(node, new Container(node));
             }
         }
@@ -297,6 +304,7 @@ public class GraphQLSchemaWriter implements Visitor {
         if (triple.getSource().equals(Name.identifier("Subscription"))) { // not supported
             return;
         }
+
 
         if (!ignoreElementsNow) {
             if (typeMap.containsKey(triple.getSource())) {
@@ -312,39 +320,23 @@ public class GraphQLSchemaWriter implements Visitor {
 
 
 
+    private void handleMsgArg(MessageArgument argument, ContainerChild child) {
 
-    private void handleMsgArg(MessageArgument argument) {
-        ContainerChild message = createMessageContainerIfNeeded(argument.message());
-        Optional<ContainerChild> oldRepresentationOpt = this.typeMap.get(argument.message().typeName()).fields.stream()
-                .filter(child -> child.edgeLabel.equals(argument.asEdge().getLabel())).findFirst();
-        if (!oldRepresentationOpt.isPresent()) {
-            Logger.getLogger(getClass()).warn("Cannot find '" + argument.message().typeName().printRaw() + "." + argument.asEdge().getLabel().printRaw() + "'");
-            return;
-        }
-        ContainerChild oldRepresentation = oldRepresentationOpt.get();
         if (argument.isInput()) {
-            if (argument.argumentOrder() >= message.arguments.size()) {
-                message.arguments.add(new FieldArgument(argument.asEdge().getLabel().print(PrintingStrategy.IGNORE_PREFIX), oldRepresentation.targetName, oldRepresentation.setValued, oldRepresentation.mandatory));
-            } else {
-                message.arguments.add(argument.argumentOrder(),new FieldArgument(argument.asEdge().getLabel().print(PrintingStrategy.IGNORE_PREFIX), oldRepresentation.targetName, oldRepresentation.setValued, oldRepresentation.mandatory));
-            }
+            child.arguments.add(new FieldArgument(
+                    system.displayName(argument.label()),
+                    argument.returnType(),
+                    system.isCollectionValued(argument.asEdge()),
+                    system.getTargetMultiplicity(argument.asEdge()).getLeft() >= 1));
         } else {
-            message.targetName = oldRepresentation.targetName;
-            message.setValued = oldRepresentation.setValued;
-            message.mandatory = oldRepresentation.mandatory;
+            child.targetName = argument.returnType();
+            child.setValued = system.isCollectionValued(argument.asEdge());
+            child.mandatory = system.getTargetMultiplicity(argument.asEdge()).getLeft() >= 1;
         }
     }
 
     private ContainerChild createMessageContainerIfNeeded(MessageType message) {
-        if (typeMap.get(message.typeName()).type == ContainerType.HIDDEN) {
-            if (message instanceof MutationMessage) {
-                return this.mutationContainer.fields.stream().filter(child -> child.edgeLabel.equals(message.typeName())).findFirst().get();
-            } else {
-                return this.queryContainer.fields.stream().filter(child -> child.edgeLabel.equals(message.typeName())).findFirst().get();
-            }
-        } else {
-            typeMap.get(message.typeName()).type = ContainerType.HIDDEN;
-            if (message instanceof MutationMessage) {
+            if (message.hasSideEffects()) {
                 if (mutationContainer == null) {
                     mutationContainer = new Container(Name.identifier("Mutation"));
                 }
@@ -365,7 +357,6 @@ public class GraphQLSchemaWriter implements Visitor {
                 queryContainer.fields.add(child);
                 return child;
             }
-        }
     }
 
     @Override
@@ -379,14 +370,7 @@ public class GraphQLSchemaWriter implements Visitor {
 
     @Override
     public void handleDiagram(Diagram diagram) {
-        if (diagram instanceof MessageType) {
-            MessageType messageType = (MessageType) diagram;
-            for (MessageArgument arg : messageType.arguments().collect(Collectors.toList())) {
-                handleMsgArg(arg);
-            }
-        } else {
             Formula<Graph> graphFormula = diagram.label();
-            GraphMorphism binding = diagram.binding();
             if (StringDT.class.isAssignableFrom(graphFormula.getClass())) {
                 diagram.nodeBinding().ifPresent(typ -> {
                     baseType(typ, "String");
@@ -424,16 +408,20 @@ public class GraphQLSchemaWriter implements Visitor {
                 TargetMultiplicity multiplicity = (TargetMultiplicity) graphFormula;
                 if (multiplicity.getLowerBound() == 1 && multiplicity.getUpperBound() == 1) {
                     diagram.edgeBinding().ifPresent(t -> {
-                        this.typeMap.get(t.getSource()).fields.stream().filter(f -> f.edgeLabel.equals(t.getLabel()))
-                                .forEach(f -> {
-                                    f.mandatory = true;
-                                    f.setValued = false;
-                                });
+                        if (typeMap.containsKey(t.getSource())) {
+                            this.typeMap.get(t.getSource()).fields.stream().filter(f -> f.edgeLabel.equals(t.getLabel()))
+                                    .forEach(f -> {
+                                        f.mandatory = true;
+                                        f.setValued = false;
+                                    });
+                        }
                     });
                 } else if (multiplicity.getLowerBound() == 0 && multiplicity.getUpperBound() == 1) {
                     diagram.edgeBinding().ifPresent(t -> {
-                        this.typeMap.get(t.getSource()).fields.stream().filter(f -> f.edgeLabel.equals(t.getLabel()))
-                                .forEach(f -> f.setValued = false);
+                        if (typeMap.containsKey(t.getSource())) {
+                            this.typeMap.get(t.getSource()).fields.stream().filter(f -> f.edgeLabel.equals(t.getLabel()))
+                                    .forEach(f -> f.setValued = false);
+                        }
                     });
                 }
             } else if (FieldArgument.class.isAssignableFrom(graphFormula.getClass())) {
@@ -456,7 +444,7 @@ public class GraphQLSchemaWriter implements Visitor {
                     typeMap.get(typ).type = ContainerType.INPUT;
                 });
             }
-        }
+
     }
 
     private void baseType(Name typ, String string) {
@@ -545,12 +533,11 @@ public class GraphQLSchemaWriter implements Visitor {
                     String[] split = t.split("\\.");
                     duplicateField.displayName = split[1] + "_" + split[0];
                 }
-
             } else {
                 duplicateField.displayName = StringUtils.lowerCaseFirst(duplicateField.edgeLabel.print(p));
             }
-
         }
+        c.fields.sort((c1,c2) -> c1.displayName.compareTo(c2.displayName));
     }
 
     public Map<Name, String> getNameToText() {

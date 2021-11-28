@@ -8,10 +8,9 @@ import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
-import no.hvl.past.gqlintegration.predicates.MutationMessage;
-import no.hvl.past.gqlintegration.predicates.QueryMesage;
 import no.hvl.past.gqlintegration.queries.GraphQLQueryDelegator;
 import no.hvl.past.gqlintegration.queries.GraphQLQueryHandler;
+import no.hvl.past.gqlintegration.schema.EntryPointType;
 import no.hvl.past.gqlintegration.schema.FieldMult;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.gqlintegration.schema.StubWiring;
@@ -24,6 +23,7 @@ import no.hvl.past.graph.trees.TypedTree;
 import no.hvl.past.names.Name;
 import no.hvl.past.plugin.UnsupportedFeatureException;
 import no.hvl.past.systems.MessageType;
+import no.hvl.past.systems.ProcessingException;
 import no.hvl.past.systems.Sys;
 
 import java.io.File;
@@ -37,40 +37,43 @@ import java.util.stream.Stream;
 
 public class GraphQLEndpoint extends Sys.Impl {
 
+    // TODO This is redundant, since it should be covered by
     private final Map<Name, FieldMult> fieldMults;
-    private final Map<Name, String> displayNames;
+    // TODO TechSpace Handler refactoring: probably to be moved out now
     private GraphQLQueryHandler queryHandler;
-    private ObjectMapper objectMapper;
-    private JsonFactory jsonFactory;
-    private Set<QueryMesage> queries;
-    private Set<MutationMessage> mutations;
-    private String queryTypeName;
-    private String mutationTyupeName;
+
+    private final ObjectMapper objectMapper;
+    private final JsonFactory jsonFactory;
+
+    // TODO should be subsumed by containers now, however it is proably good to know the name of the query type
+    private EntryPointType queries;
+    private EntryPointType mutations;
 
 
     public GraphQLEndpoint(
             String url,
             Sketch schema,
             Map<Name, String> displayNames,
+            Map<Name, MessageType> messages, // should be discoverable
             List<FieldMult> multiplicities,
-            Set<QueryMesage> queries,
-            Set<MutationMessage> mutations,
+            EntryPointType queries,
+            EntryPointType mutations,
             ObjectMapper objectMapper,
-            JsonFactory jsonFactory,
-            String queryTypeName,
-            String mutationTypeName) {
-        super(url, schema, displayNames);
-        this.displayNames = displayNames;
+            JsonFactory jsonFactory) {
+        super(url, schema, displayNames, messages);
+        this.queries = queries;
+        this.mutations = mutations;
         this.objectMapper = objectMapper;
         this.jsonFactory = jsonFactory;
         this.fieldMults = new HashMap<>();
         for (FieldMult m : multiplicities) {
             fieldMults.put(m.getElementName(), m);
         }
-        this.queries = queries;
-        this.mutations = mutations;
-        this.queryTypeName = queryTypeName;
-        this.mutationTyupeName = mutationTypeName;
+    }
+
+    @Override
+    public boolean isMessageContainer(Name name) {
+        return queries.getName().equals(name.printRaw()) || mutations.getName().equals(name.printRaw());
     }
 
     public Optional<Triple> lookupField(Name owner, String fieldNameAsString) {
@@ -94,12 +97,12 @@ public class GraphQLEndpoint extends Sys.Impl {
         return super.hasTargetMultiplicity(edge,lowerBound, upperBound);
     }
 
-    public Optional<QueryMesage> getQueryMessage(String operationName) {
-        return this.queries.stream().filter(qm -> qm.getOperationName().equals(operationName)).findFirst();
+    public Optional<MessageType> getQueryMessage(String operationName) {
+        return this.queries.getFields().stream().filter(qm -> this.displayName(qm.typeName()).equals(operationName)).findFirst();
     }
 
-    public Optional<MutationMessage> getMutationNMassage(String operationName) {
-        return this.mutations.stream().filter(mm -> mm.getOperationName().equals(operationName)).findFirst();
+    public Optional<MessageType> getMutationNMassage(String operationName) {
+        return this.mutations.getFields().stream().filter(mm -> this.displayName(mm.typeName()).equals(operationName)).findFirst();
     }
 
 
@@ -107,25 +110,20 @@ public class GraphQLEndpoint extends Sys.Impl {
         if (name.contains(".")) {
             String container = name.substring(0, name.indexOf('.'));
             String operation = name.substring(name.indexOf('.') + 1);
-            for (QueryMesage queryMesage : this.queries) {
-                if (queryMesage.getContainerObjectName().equals(container) && queryMesage.getOperationName().equals(operation)) {
-                    return Optional.of(queryMesage);
-                }
+            if (container.equals(this.queries.getName())) {
+                return getQueryMessage(operation);
             }
-            for (MutationMessage mutationMessage : this.mutations) {
-                if (mutationMessage.getContainerObjectName().equals(container) && mutationMessage.getOperationName().equals(operation)) {
-                    return Optional.of(mutationMessage);
-                }
+            if (container.equals(this.mutations.getName())) {
+                return getMutationNMassage(operation);
             }
             return Optional.empty();
         }
-        Optional<QueryMesage> qm = getQueryMessage(name);
-        return qm.<Optional<MessageType>>map(Optional::of).orElseGet(() -> getMutationNMassage(name).map(x -> x));
+        return messages().filter(m -> displayName(m.typeName()).equals(name)).findFirst();
     }
 
     @Override
     public Stream<MessageType> messages() {
-        return Stream.concat(this.queries.stream(), this.mutations.stream());
+        return Stream.concat(this.queries.getFields().stream(), this.mutations.getFields().stream());
     }
 
     @Override
@@ -147,20 +145,16 @@ public class GraphQLEndpoint extends Sys.Impl {
     }
 
     @Override
-    public String displayName(Name name) {
-        return displayNames.get(name);
-    }
-
-    @Override
     public Optional<Triple> lookup(String... path) {
         if (path.length == 0) {
             return Optional.empty();
         }
-        if (path[0].equals(queryTypeName) || path[0].equals(mutationTyupeName)) {
+        if (path[0].equals(this.queries.getName()) || path[0].equals(this.mutations.getName())) {
             if (path.length == 1) {
                 return Optional.empty();
             }
-            Name msgType = Name.identifier(path[0] + "." + path[1]);
+            // FIXME urgent: Have to write as test for this!!!
+            Name msgType = Name.identifier(path[1]).prefixWith(Name.identifier(path[0]));
             if (path.length > 2) {
                 Name last = Name.identifier(path[path.length - 1]);
                 for (int i = path.length - 2; i > 1; i++) {
@@ -201,26 +195,15 @@ public class GraphQLEndpoint extends Sys.Impl {
             File file = new File(new URI(url));
             TypeDefinitionRegistry registry = new SchemaParser().parse(file);
             GraphQLSchema schema = new SchemaGenerator().makeExecutableSchema(registry, StubWiring.createWiring(registry));
-            sketch = reader.convert(name, schema);
+            return reader.convert(url, name, schema, objectMapper, jsonFactory);
         } else {
             // introspection query
             GraphQLSchema schema = new IntrospectionQuery().getGraphQLSchema(url);
-            sketch = reader.convert(name, schema);
+            return reader.convert(url, name, schema, objectMapper, jsonFactory);
         }
-        return new GraphQLEndpoint(
-                url,
-                sketch,
-                reader.getNameToText(),
-                reader.getMultiplicities() ,
-                reader.getQueries(),
-                reader.getMuations(),
-                objectMapper,
-                jsonFactory
-        ,reader.getQueryTypeName(), reader.getMutationTypeName());
-
     }
 
-    public GraphMorphism parseQueryOrInstance(InputStream inputStream) throws IOException {
+    public GraphMorphism parseQueryOrInstance(InputStream inputStream) throws IOException, ProcessingException {
         return getOrCreateQueryHandler(objectMapper,jsonFactory).deserialize(inputStream);
     }
 
@@ -238,5 +221,13 @@ public class GraphQLEndpoint extends Sys.Impl {
 
     public void setQueryHandler(GraphQLQueryHandler handler) {
         this.queryHandler = handler;
+    }
+
+    public String mutationTypeName() {
+        return mutations.getName();
+    }
+
+    public String queryTypeName() {
+        return queries.getName();
     }
 }

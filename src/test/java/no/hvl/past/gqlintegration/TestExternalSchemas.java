@@ -1,4 +1,4 @@
-package no.hvl.past.gqlintegration.integration;
+package no.hvl.past.gqlintegration;
 
 import no.hvl.past.gqlintegration.GraphQLAdapter;
 import no.hvl.past.gqlintegration.GraphQLTest;
@@ -18,12 +18,13 @@ import java.util.stream.Collectors;
 
 import static graphql.Assert.assertNotEmpty;
 import static graphql.Assert.assertTrue;
+import static no.hvl.past.gqlintegration.SchemaReaderTest.assertsAboutSalesSchema;
 import static org.junit.Assert.assertEquals;
 
 public class TestExternalSchemas extends GraphQLTest {
 
     @Test
-    public void testRickAndMortyAPI() throws IOException, UnsupportedFeatureException, TechSpaceException {
+    public void testRickAndMortyAPI() throws Exception{
         GraphQLAdapter adapter = createAdapter();
         Sys rickAndMorty = adapter.parseSchema(Name.identifier("RickAndMorty"), "https://rickandmortyapi.com/graphql");
         List<Name> types = rickAndMorty.schema().carrier().nodes().collect(Collectors.toList());
@@ -40,7 +41,7 @@ public class TestExternalSchemas extends GraphQLTest {
 
 
     @Test
-    public void testKarlEriksDemo() throws IOException, UnsupportedFeatureException, TechSpaceException {
+    public void testKarlEriksDemo() throws Exception {
         GraphQLAdapter adapter = createAdapter();
         Sys ke = adapter.parseSchema(Name.identifier("Persons"), "http://localhost:52297/graphql");
         List<Name> types = ke.schema().carrier().nodes().collect(Collectors.toList());
@@ -140,7 +141,7 @@ public class TestExternalSchemas extends GraphQLTest {
 
 
     @Test
-    public void testKarlEriksDemo2() throws IOException, UnsupportedFeatureException, TechSpaceException {
+    public void testKarlEriksDemo2() throws Exception {
         GraphQLAdapter adapter = createAdapter();
         Sys ke = adapter.parseSchema(Name.identifier("Pregnancies"), "http://localhost:52298/graphql");
         List<Name> types = ke.schema().carrier().nodes().collect(Collectors.toList());
@@ -240,6 +241,14 @@ public class TestExternalSchemas extends GraphQLTest {
                 "}";
 
         assertEquals(expected, bos.toString("UTF-8"));
+    }
 
+    @Test
+    public void testFromIntrospectionQuery() throws Exception {
+        makeSureServerIsRunning("http://localhost:4011");
+        GraphQLAdapter adaptor = createAdapter();
+        Sys s = adaptor.parseSchema(Name.identifier("SALES"), "http://localhost:4011");
+
+        assertsAboutSalesSchema(s);
     }
 }

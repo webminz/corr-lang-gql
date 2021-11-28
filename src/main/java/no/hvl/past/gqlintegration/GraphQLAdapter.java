@@ -11,20 +11,16 @@ import no.hvl.past.gqlintegration.queries.GraphQLQueryDivider;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.graph.*;
-import no.hvl.past.graph.trees.QueryHandler;
+import no.hvl.past.systems.*;
 import no.hvl.past.graph.trees.QueryTree;
 import no.hvl.past.graph.trees.TypedTree;
 import no.hvl.past.names.Name;
 import no.hvl.past.names.PrintingStrategy;
 import no.hvl.past.plugin.UnsupportedFeatureException;
-import no.hvl.past.server.WebserviceRequestHandler;
-import no.hvl.past.systems.ComprSys;
-import no.hvl.past.systems.Data;
-import no.hvl.past.systems.Sys;
 import no.hvl.past.techspace.TechSpaceAdapter;
 import no.hvl.past.techspace.TechSpaceDirective;
 import no.hvl.past.techspace.TechSpaceException;
-import org.apache.log4j.Logger;
+import no.hvl.past.techspace.TechnologySpecificRules;
 
 import java.io.*;
 import java.net.ConnectException;
@@ -74,7 +70,7 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
     @Override
     public void writeSchema(Sys sys, OutputStream outputStream) throws TechSpaceException, UnsupportedFeatureException {
         try {
-            GraphQLSchemaWriter schemaWriter = new GraphQLSchemaWriter();
+            GraphQLSchemaWriter schemaWriter = new GraphQLSchemaWriter(sys);
             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
             sys.schema().accept(schemaWriter);
             schemaWriter.printToBuffer(writer);
@@ -118,7 +114,7 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
                 return Data.fromTree(system, (TypedTree) GraphQLQueryDivider.create(objectMapper, jsonFactory, (ComprSys) system, new LinkedHashMap<>()).deserialize(inputStream));
             }
             throw new TechSpaceException("Cannot parse instance for '" + system.url() + "'", GraphQLTechSpace.INSTANCE);
-        } catch (IOException e) {
+        } catch (IOException | ProcessingException e) {
             throw new TechSpaceException("Error occured parsing instance", e, GraphQLTechSpace.INSTANCE);
         }
     }
@@ -155,27 +151,65 @@ public class GraphQLAdapter implements TechSpaceAdapter<GraphQLTechSpace>, TechS
 
 
     @Override
-    public Optional<Name> stringDataType() {
-        return Optional.of(Name.identifier("String"));
+    public Stream<StringTypeDescription> stringDataType() {
+        return Stream.of(() -> Name.identifier("String"));
     }
 
     @Override
-    public Optional<Name> boolDataType() {
-        return Optional.of(Name.identifier("Boolean"));
+    public Stream<BaseTypeDescription> boolDataType() {
+        return Stream.of(() -> Name.identifier("Boolean"));
     }
 
     @Override
-    public Optional<Name> integerDataType() {
-        return Optional.of(Name.identifier("Int"));
+    public Stream<IntTypeDescription> integerDataType() {
+        return Stream.of(new IntTypeDescription() {
+            @Override
+            public int limit() {
+                return 32; // TODO GRAPH_QL have to look this up in the doc
+            }
+
+            @Override
+            public IntTypeSizeRestriction restriction() {
+                return IntTypeSizeRestriction.BIT_LENGTH_RESTRICTED;
+            }
+
+            @Override
+            public Name typeName() {
+                return Name.identifier("Int");
+            }
+        });
     }
 
     @Override
-    public Optional<Name> floatingPointDataType() {
-        return Optional.of(Name.identifier("Float"));
+    public Stream<FloatTypeDescription> floatingPointDataType() {
+        return Stream.of(new IEEEFloatTypeDescription() {
+            @Override
+            public int bitSize() {
+                return 64; // TODO GRAPH_QL have to look this up in the doc
+            }
+
+            @Override
+            public Name typeName() {
+                return Name.identifier("Float");
+            }
+        });
     }
 
     @Override
-    public Stream<Name> implicitTypeIdentities() {
-        return Stream.of(Name.identifier("ID"));
+    public Stream<CustomBaseTypeDescription> otherDataTypes() {
+        return Stream.of(new CustomBaseTypeDescription() {
+            @Override
+            public Name typeName() {
+                return Name.identifier("ID");
+            }
+        });
     }
+
+    @Override
+    public void additionalTechnologySpecificRules(TechnologySpecificRules configure) {
+        configure.identifyTypesWithName(Name.identifier("Query"))
+                .identifyTypesWithName(Name.identifier("Mutation"));
+    }
+
+
 }

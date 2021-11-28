@@ -1,9 +1,10 @@
 package no.hvl.past.gqlintegration.queries;
 
+
+import com.fasterxml.jackson.core.JsonFactory;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 import no.hvl.past.graph.Graph;
-import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.trees.*;
 import no.hvl.past.keys.Key;
@@ -14,27 +15,25 @@ import no.hvl.past.systems.Sys;
 import no.hvl.past.util.StringUtils;
 
 
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+// TODO split into multiple files
+// TODO the localize mechanism should be pulled up
 public class GraphQLQuery implements QueryTree {
 
     private final List<QueryRoot> roots;
-    private final Sketch targetSchema;
+    private final Sys endpoint;
     private final Name queryName;
 
-
-    public GraphQLQuery(List<QueryRoot> roots, Sketch targetSchema, Name queryName) {
+    public GraphQLQuery(List<QueryRoot> roots, Sys endpoint, Name queryName) {
         this.roots = roots;
-        this.targetSchema = targetSchema;
+        this.endpoint = endpoint;
         this.queryName = queryName;
     }
 
-    @Override
-    public boolean isInfinite() {
-        return false;
-    }
 
     public boolean isQueryEmpty() {
         return this.roots.isEmpty();
@@ -44,6 +43,7 @@ public class GraphQLQuery implements QueryTree {
         return roots;
     }
 
+    // TODO this interface will probably moved up as well
     public interface AbstractSelection {
 
         String field();
@@ -67,7 +67,7 @@ public class GraphQLQuery implements QueryTree {
              this.child = child;
              this.isComplex = isComplex;
              this.isListValued = isListValued;
-         }
+        }
 
         public boolean isComplex() {
             return isComplex;
@@ -82,12 +82,13 @@ public class GraphQLQuery implements QueryTree {
             return child.getLabel();
         }
 
+        @Override
         public boolean isListValued() {
             return isListValued;
         }
 
-         @Override
-         public QueryNode parent() {
+        @Override
+        public QueryNode parent() {
              return parent;
          }
 
@@ -96,23 +97,23 @@ public class GraphQLQuery implements QueryTree {
             return typing.getLabel();
         }
 
-         @Override
-         public String label() {
+        @Override
+        public String label() {
              return child.label;
          }
 
-         @Override
-         public QueryNode child() {
+        @Override
+        public QueryNode child() {
              return child;
          }
 
-         @Override
-         public boolean isCollection() {
+        @Override
+        public boolean isCollection() {
              return false;
          }
 
-         @Override
-         public int index() {
+        @Override
+        public int index() {
              return 0;
          }
 
@@ -145,7 +146,7 @@ public class GraphQLQuery implements QueryTree {
 
                 if (!this.isComplex || !newNode.children.isEmpty()) {
                     ((QueryCursor.ConcatCursor)SelectionSet.this.child.cursor).addLocalCursor(local.url(),cursor);
-                    for (Argument arg : this.child.getArguments()) {
+                    for (AbstractArgument arg : this.child.getArguments()) {
                         newNode.arguments.addAll(arg.localize(newNode, comprSys, local));
                     }
                     result.add(newSelectionSect);
@@ -155,34 +156,22 @@ public class GraphQLQuery implements QueryTree {
         }
     }
 
-    public static class Argument implements QueryBranch.Selection {
+    public static abstract class AbstractArgument implements QueryBranch.Selection {
 
-        private final String name;
-        private final String valueText;
-        private final Value value;
+        protected Node parent;
+        private final String label;
         private final Triple type;
-        private final Node parent;
+        private final Integer index;
 
-        Argument(String name, String valueText, Value value, Triple type, Node parent) {
-            this.name = name;
-            this.valueText = valueText;
-            this.value = value;
-            this.type = type;
+        public AbstractArgument(Node parent, String label, Triple type, Integer index) {
             this.parent = parent;
+            this.label = label;
+            this.type = type;
+            this.index = index;
         }
 
-
-        public Value getValue() {
-            return value;
-        }
-
-        public String getValueText() {
-            return valueText;
-        }
-
-        @Override
-        public Node parent() {
-            return parent;
+        public Triple getType() {
+            return type;
         }
 
         @Override
@@ -192,66 +181,131 @@ public class GraphQLQuery implements QueryTree {
 
         @Override
         public String label() {
-            return name;
-        }
-
-        @Override
-        public QueryNode child() {
-            return new QueryNode() {
-                @Override
-                public Name branchName() {
-                    return Name.identifier(label());
-                }
-
-                @Override
-                public Name nodeType() {
-                    return type.getTarget();
-                }
-
-                @Override
-                public Stream<Branch> children() {
-                    return Stream.empty();
-                }
-
-                @Override
-                public Optional<Branch> parentRelation() {
-                    return Optional.of(GraphQLQuery.Argument.this);
-                }
-            };
+            return label;
         }
 
         @Override
         public boolean isCollection() {
-            return false;
+            return index != null;
         }
 
         @Override
         public int index() {
-            return 0;
+            return Optional.ofNullable(index).orElse(-1);
         }
+
+        void setParent(Node newParent) {
+            if (this.parent != null) {
+                this.parent.arguments.remove(this);
+                this.parent = null;
+            }
+            this.parent = newParent;
+            this.parent.arguments.add(this);
+        }
+        @Override
+        public QueryNode parent() {
+            return parent;
+        }
+
+        abstract Collection<AbstractArgument> localize(Node parent, ComprSys comprSys, Sys local);
+
+        abstract String textRepresentation();
+
+    }
+
+    public static class ComplexArgument extends AbstractArgument {
+
+        private InputObject child;
+
+        public  ComplexArgument(Node parent, String label, Triple type, InputObject child) {
+            this(parent, label, type, null, child);
+        }
+
+        public ComplexArgument(Node parent, String label, Triple type, Integer index, InputObject child) {
+            super(parent, label, type, index);
+            this.child = child;
+        }
+
+        @Override
+        public TypedNode child() {
+            return child;
+        }
+
+        @Override
+        String textRepresentation() {
+            StringBuilder sb = new StringBuilder();
+            child.print(sb, 0);
+            return sb.toString();
+        }
+
+        @Override
+        Collection<AbstractArgument> localize(Node parent, ComprSys comprSys, Sys local) {
+            List<AbstractArgument> result = new ArrayList<>();
+            comprSys.localNames(local, this.getType().getLabel()).forEach(localName -> {
+                result.add(new ComplexArgument(parent,local.displayName(localName),local.schema().carrier().get(localName).get(),child));
+            });
+            return result;
+        }
+    }
+
+    public static class SimpleArgument extends AbstractArgument {
+
+        private final String valueText;
+        private final Value value;
+
+
+        public SimpleArgument(Node parent, String label, Triple type, Integer index, String valueText, Value value) {
+            super(parent, label, type, index);
+            this.valueText = valueText;
+            this.value = value;
+        }
+
+        SimpleArgument(String name, String valueText, Value value, Triple type, Node parent) {
+            this(parent, name, type, null, valueText, value);
+        }
+
+        public Value getValue() {
+            return value;
+        }
+
+        public String getValueText() {
+            return valueText;
+        }
+
 
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            Argument argument = (Argument) o;
-            return name.equals(argument.name) &&
+            SimpleArgument argument = (SimpleArgument) o;
+            return label().equals(argument.label()) &&
                     valueText.equals(argument.valueText) &&
                     value.equals(argument.value) &&
-                    type.equals(argument.type);
+                    getType().equals(argument.getType());
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(name, valueText, value, type);
+            return Objects.hash(label(), valueText, value, getType());
         }
 
-        Collection<Argument> localize(Node parent, ComprSys comprSys, Sys local) {
-            List<Argument> result = new ArrayList<>();
-            comprSys.localNames(local, this.type.getLabel()).forEach(localName -> {
-                result.add(new Argument(local.displayName(localName), valueText, value, local.schema().carrier().get(localName).get(), parent));
+        Collection<AbstractArgument> localize(Node parent, ComprSys comprSys, Sys local) {
+            List<AbstractArgument> result = new ArrayList<>();
+            comprSys.localNames(local, this.getType().getLabel()).forEach(localName -> {
+                result.add(new SimpleArgument(local.displayName(localName), valueText, value, local.schema().carrier().get(localName).get(), parent));
             });
             return result;
+        }
+
+        @Override
+        String textRepresentation() {
+            // TODO varies between different types
+            return "\"" + valueText + "\"";
+        }
+
+        @Override
+        public TypedNode child() {
+            return new TypedNode.Impl(value,this, Collections.emptyList(), getType().getTarget());
         }
     }
 
@@ -260,7 +314,7 @@ public class GraphQLQuery implements QueryTree {
         private final String label;
         private final Name type;
         private final List<SelectionSet> children = new ArrayList<>();
-        private final List<Argument> arguments = new ArrayList<>();
+        private final List<AbstractArgument> arguments = new ArrayList<>();
         private SelectionSet parent;
         QueryCursor cursor;
 
@@ -287,7 +341,7 @@ public class GraphQLQuery implements QueryTree {
             return this.cursor;
         }
 
-        List<Argument> getArguments() {
+        List<AbstractArgument> getArguments() {
             return arguments;
         }
 
@@ -295,28 +349,43 @@ public class GraphQLQuery implements QueryTree {
             return children;
         }
 
-        void addParent(Node parent, Triple typingEdge, boolean isComplexTypeChild, boolean isListValued) {
+        void setParent(Node parent, Triple typingEdge, boolean isComplexTypeChild, boolean isListValued) {
+            if (this.parent != null) {
+                this.parent.parent.children.remove(this.parent);
+                this.parent = null;
+            }
             SelectionSet e = new SelectionSet(typingEdge, parent, this, isComplexTypeChild, isListValued);
             parent.children.add(e);
             this.parent = e;
         }
 
-        void addAttribute(String attributeName, String valueAsText, Value attributeValue, Triple typing) {
-            this.arguments.add(new Argument(attributeName, valueAsText, attributeValue, typing, this));
+        void addSimpleArgument(String attributeName, String valueAsText, Value attributeValue, Triple typing, int index) {
+            this.arguments.add(new SimpleArgument(this, attributeName, typing, index, valueAsText, attributeValue));
+        }
+
+
+        void addSimpleArgument(String attributeName, String valueAsText, Value attributeValue, Triple typing) {
+            this.arguments.add(new SimpleArgument(attributeName, valueAsText, attributeValue, typing, this));
+        }
+
+        public void addComplexArgument(String currentArgumentName, InputObject node, Triple peek, int index) {
+            this.arguments.add(new ComplexArgument(this, currentArgumentName, peek, index, node));
+        }
+
+        public void addComplexArgument(String currentArgumentName, InputObject node, Triple peek) {
+            this.arguments.add(new ComplexArgument(this, currentArgumentName, peek, node));
         }
 
         public void addChild(Node node, Triple typingEdge, boolean isComplexTypeChild, boolean isListValued) {
             SelectionSet e = new SelectionSet(typingEdge, this, node, isComplexTypeChild, isListValued);
+            node.parent = e;
             this.children.add(e);
-            this.parent = e;
         }
-
 
         public Node(String label, Name type) {
             this.label = label;
             this.type = type;
         }
-
 
         public String getLabel() {
             return label;
@@ -349,20 +418,18 @@ public class GraphQLQuery implements QueryTree {
             return result.stream();
         }
 
-
         public void print(StringBuilder sink, int nestingLevel) {
             sink.append(StringUtils.produceIndentation(nestingLevel));
             sink.append(label);
             sink.append(' ');
             if (!arguments.isEmpty()) {
                 sink.append('(');
-                Iterator<Argument> it = arguments.iterator();
+                Iterator<AbstractArgument> it = arguments.iterator();
                 while (it.hasNext()) {
-                    Argument argument = it.next();
-                    sink.append(argument.name);
-                    sink.append(" : \"");
-                    sink.append(argument.valueText);
-                    sink.append('"');
+                    AbstractArgument argument = it.next();
+                    sink.append(argument.label);
+                    sink.append(" : ");
+                    sink.append(argument.textRepresentation());
                     if (it.hasNext()) {
                         sink.append(", ");
                     }
@@ -397,6 +464,58 @@ public class GraphQLQuery implements QueryTree {
             return Objects.hash(label, type, children, arguments);
         }
 
+    }
+
+
+    public static class InputObject extends Node implements Cloneable {
+
+        public InputObject(String label, Name type) {
+            super(label, type);
+        }
+
+        @Override
+        List<SelectionSet> getChildren() {
+            return new ArrayList<>();
+        }
+
+        @Override
+        public void print(StringBuilder sink, int nestingLevel) {
+            sink.append('{');
+            sink.append(' ');
+            String lastKey = null;
+            boolean inList = false;
+            Iterator<AbstractArgument> i = getArguments().iterator();
+            while (i.hasNext()) {
+                AbstractArgument current = i.next();
+                if (!current.label.equals(lastKey)) {
+                    if (inList) {
+                        sink.append(']');
+                        inList = false;
+                    }
+                    lastKey = current.label;
+                    sink.append(current.label);
+                    sink.append(' ');
+                    sink.append(':');
+                    sink.append(' ');
+                    if (current.isCollection()) {
+                        sink.append('[');
+                        inList = true;
+                    }
+                }
+                sink.append(current.textRepresentation());
+                if (i.hasNext()) {
+                    sink.append(", ");
+                } else if (inList) {
+                    sink.append(']');
+                }
+            }
+            sink.append(' ');
+            sink.append('}');
+        }
+
+        public InputObject copyFor(String currentArgumentName) {
+            return this; // FIXME implement correctly
+        }
     }
 
     public static class QueryRoot extends Node implements QueryNode.Root, AbstractSelection {
@@ -456,7 +575,7 @@ public class GraphQLQuery implements QueryTree {
                 }
                 if (!e.getChildren().isEmpty()) {
                     ((QueryCursor.ConcatCursor) QueryRoot.this.cursor).addLocalCursor(local.url(), localCursor);
-                    for (Argument arg : this.getArguments()) {
+                    for (AbstractArgument arg : this.getArguments()) {
                         e.getArguments().addAll(arg.localize(e, comprSys, local));
                     }
                     result.add(e);
@@ -493,7 +612,7 @@ public class GraphQLQuery implements QueryTree {
         if (roots.isEmpty()) {
             return Optional.empty();
         } else {
-            return Optional.of(new GraphQLQuery(roots, local.schema(), Name.anonymousIdentifier()));
+            return Optional.of(new GraphQLQuery(roots, local, Name.anonymousIdentifier()));
         }
     }
 
@@ -531,7 +650,7 @@ public class GraphQLQuery implements QueryTree {
 
     @Override
     public Graph codomain() {
-        return targetSchema.carrier();
+        return endpoint.schema().carrier();
     }
 
     @Override

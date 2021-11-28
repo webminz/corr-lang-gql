@@ -2,28 +2,25 @@ package no.hvl.past.gqlintegration.queries;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import graphql.ExecutionInput;
-import graphql.ExecutionResult;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
-import no.hvl.past.graph.Sketch;
-import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.trees.*;
 import no.hvl.past.names.Name;
 import no.hvl.past.systems.MessageArgument;
 import no.hvl.past.systems.MessageType;
-import no.hvl.past.systems.Sys;
-import no.hvl.past.techspace.TechSpaceException;
-import no.hvl.past.util.GenericIOHandler;
-import no.hvl.past.util.IOStreamUtils;
+import no.hvl.past.systems.ProcessingException;
+import no.hvl.past.systems.QueryHandler;
 import no.hvl.past.util.StreamExt;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.*;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public abstract class GraphQLQueryHandler implements QueryHandler {
@@ -36,6 +33,7 @@ public abstract class GraphQLQueryHandler implements QueryHandler {
     public static final String QUERY_VARIABLES_FIELD = "variables";
     private final GraphQLEndpoint endpoint;
 
+    private Logger logger = LogManager.getLogger(getClass());
     protected GraphQLQueryHandler(GraphQLEndpoint endpoint) {
         this.endpoint = endpoint;
     }
@@ -68,59 +66,55 @@ public abstract class GraphQLQueryHandler implements QueryHandler {
     }
 
 
-    public TypedTree deserialize(InputStream inputStream) throws IOException {
+    public TypedTree deserialize(InputStream inputStream) throws IOException, ProcessingException {
         // TODO support XML as well
-        JsonNode jsonNode = getObjectMapper().readTree(inputStream);
-        if (jsonNode.isObject()) {
-            if (jsonNode.get(ERRORS_FIELD) != null) {
-                mkError(jsonNode.get(ERRORS_FIELD));
+        try {
+            JsonNode jsonNode = getObjectMapper().readTree(inputStream);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Received the following request: \n\n" + jsonNode.toPrettyString());
             }
-            if (jsonNode.get(RETURN_VALUE_FIELD) != null) {
-                tryParseInstance(jsonNode.get(RETURN_VALUE_FIELD));
-            } else if (jsonNode.get(QUERY_FIELD) != null) {
-                String query = jsonNode.get(QUERY_FIELD).asText();
-                String opName = jsonNode.get(QUERY_OPERATION_FIELD) != null ? jsonNode.get(QUERY_OPERATION_FIELD).asText() : null;
-                Map<String, Object> variables = parseVariables(jsonNode);
-                if (query.contains(INTROSPECTION_ROOT)) {
-                    return new IntrospectionQuery(query, opName, variables);
-                } else {
-                    return GraphQLQueryParser.parse(this.endpoint, query, opName, variables);
+            if (jsonNode.isObject()) {
+                if (jsonNode.get(ERRORS_FIELD) != null) {
+                    throw GraphQueryErrorMessage.parse(jsonNode.get(ERRORS_FIELD));
                 }
-            } else {
-                return tryParseInstance(jsonNode);
+                if (jsonNode.get(RETURN_VALUE_FIELD) != null) {
+                    return tryParseInstance(jsonNode.get(RETURN_VALUE_FIELD));
+                } else if (jsonNode.get(QUERY_FIELD) != null) {
+                    String query = jsonNode.get(QUERY_FIELD).asText();
+                    String opName = jsonNode.get(QUERY_OPERATION_FIELD) != null ? jsonNode.get(QUERY_OPERATION_FIELD).asText() : null;
+                    JsonNode variables = parseVariables(jsonNode);
+                    if (query.contains(INTROSPECTION_ROOT)) {
+                        return new IntrospectionQuery(query, opName);
+                    } else {
+                        return GraphQLQueryParser.parse(this.endpoint, query, opName, variables);
+                    }
+                } else {
+                    return tryParseInstance(jsonNode);
+                }
+            } else if (jsonNode.isTextual() && jsonNode.asText().contains(QUERY_FIELD)) {
+                return GraphQLQueryParser.parse(this.endpoint, jsonNode.asText(), null, new ObjectNode(JsonNodeFactory.instance));
             }
-        } else if (jsonNode.isTextual() && jsonNode.asText().contains(QUERY_FIELD)) {
-            return GraphQLQueryParser.parse(this.endpoint,jsonNode.asText(), null, new HashMap<>());
+        } catch (JsonParseException parseException) {
+            // TODO try with XML
+            throw new ProcessingException("Could not interpret the input: JSON parsing exception(\"" + parseException.getMessage() + "\")", parseException);
         }
-        throw new IOException("Could not interpret the input: '" + jsonNode.toPrettyString() + "'");
+        throw new ProcessingException("Could not interpret the input: unknown input format!");
     }
 
     // Helper methods
 
-    private void mkError(JsonNode errorNode) throws IOException {
-        if (errorNode.isArray()) {
-            Iterator<JsonNode> iterator = errorNode.iterator();
-            if (iterator.hasNext()) {
-                List<String> errorMessage = new ArrayList<>();
-                while (iterator.hasNext()) {
-                    JsonNode error = iterator.next();
-                    errorMessage.add(error.get("message").asText());
-                }
-                throw new IOException(StreamExt.stream(errorMessage).fuse(",", String::toString));
-                // TODO add locations, path, and extension
-            }
-        }
-    }
 
-    private Map<String, Object> parseVariables(JsonNode jsonNode) throws JsonProcessingException {
+
+    private JsonNode parseVariables(JsonNode jsonNode) throws JsonProcessingException {
         if (jsonNode.get(QUERY_VARIABLES_FIELD) != null) {
-            getObjectMapper().readValue(jsonNode.get(QUERY_VARIABLES_FIELD).toString(), Map.class);
+            return jsonNode.get(QUERY_VARIABLES_FIELD);
         }
-        return new HashMap<>();
+        return new ObjectNode(JsonNodeFactory.instance);
     }
 
 
     private TypedTree tryParseInstance(JsonNode rootNode) throws IOException {
+        // TODO this should be a generic method of the core library
         JsonParser jsonParser = new JsonParser(getJsonFactory());
         if (rootNode.isObject()) {
             Iterator<String> fieldNames = rootNode.fieldNames();

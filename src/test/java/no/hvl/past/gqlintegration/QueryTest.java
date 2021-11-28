@@ -13,6 +13,7 @@ import no.hvl.past.gqlintegration.queries.QueryCursor;
 import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.Universe;
 import no.hvl.past.graph.elements.Triple;
+import no.hvl.past.graph.trees.TreeCreator;
 import no.hvl.past.keys.AttributeBasedKey;
 import no.hvl.past.keys.ConcatenatedKey;
 import no.hvl.past.keys.ConstantKey;
@@ -275,7 +276,7 @@ public class QueryTest  extends GraphQLTest {
 
         JsonGenerator generator = factory.createGenerator(bos);
         generator.writeStartObject();
-        cursorRoot.processOne(generator);
+        cursorRoot.processOne(new TreeCreator.JsonGeneratorTreeCreator(generator));
         generator.writeEndObject();
         generator.flush();
         generator.close();
@@ -431,7 +432,7 @@ public class QueryTest  extends GraphQLTest {
 
         JsonGenerator generator = factory.createGenerator(bos);
         generator.writeStartObject();
-        abCursorRoot.processOne(generator);
+        abCursorRoot.processOne(new TreeCreator.JsonGeneratorTreeCreator(generator));
         generator.writeEndObject();
         generator.flush();
         generator.close();
@@ -505,7 +506,7 @@ public class QueryTest  extends GraphQLTest {
 
         JsonGenerator generator = factory.createGenerator(bos);
         generator.writeStartObject();
-        partnersRoot.processOne(generator);
+        partnersRoot.processOne(new TreeCreator.JsonGeneratorTreeCreator(generator));
         generator.writeEndObject();
         generator.flush();
         generator.close();
@@ -650,7 +651,7 @@ public class QueryTest  extends GraphQLTest {
         generator.writeStartObject();
 
         concatCursorRoot.addResults(twoEntryMap("f",first,"s", second));
-        concatCursorRoot.processOne(generator);
+        concatCursorRoot.processOne(new TreeCreator.JsonGeneratorTreeCreator(generator));
 
         generator.writeEndObject();
         generator.flush();

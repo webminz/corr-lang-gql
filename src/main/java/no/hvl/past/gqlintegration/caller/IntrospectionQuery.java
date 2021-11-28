@@ -134,7 +134,7 @@ public class IntrospectionQuery implements QueryTree {
 
     private final String operationName;
 
-    private final Map<String, Object> variables;
+   // private final Map<String, Object> variables;
 
     public String getQuery() {
         return query;
@@ -144,20 +144,18 @@ public class IntrospectionQuery implements QueryTree {
         return Optional.ofNullable(operationName);
     }
 
-    public Optional<Map<String, Object>> getVariables() {
-        return Optional.ofNullable(variables);
-    }
+ //   public Optional<Map<String, Object>> getVariables() {
+  //      return Optional.ofNullable(variables);
+   // }
 
     public IntrospectionQuery() {
         this.query = IntrospectionQuery.INTROSPECTION_QUERY;
         this.operationName = null;
-        this.variables = null;
     }
 
-    public IntrospectionQuery(String query, String operationName, Map<String, Object> variables) {
+    public IntrospectionQuery(String query, String operationName) {
         this.query = query;
         this.operationName = operationName;
-        this.variables = variables;
     }
 
     public GraphQLSchema getGraphQLSchema(String endpoint) throws IOException {

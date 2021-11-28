@@ -7,11 +7,12 @@ public class GraphQLTechSpace implements TechSpace {
      static GraphQLTechSpace INSTANCE = new GraphQLTechSpace();
      static final String KEY = "GRAPH_QL";
 
-    private GraphQLTechSpace() {
-    }
+     private GraphQLTechSpace() {
 
-    @Override
-    public String ID() {
+     }
+
+     @Override
+     public String ID() {
         return KEY;
     }
 }

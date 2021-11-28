@@ -1,6 +1,7 @@
 package no.hvl.past.gqlintegration.queries;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,31 +15,29 @@ import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
-import no.hvl.past.gqlintegration.predicates.MutationMessage;
-import no.hvl.past.gqlintegration.predicates.QueryMesage;
+import no.hvl.past.gqlintegration.schema.EntryPointType;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.gqlintegration.schema.StubWiring;
-import no.hvl.past.graph.elements.Triple;
-import no.hvl.past.graph.predicates.*;
 import no.hvl.past.graph.trees.*;
-import no.hvl.past.keys.Key;
 import no.hvl.past.keys.KeyNotEvaluated;
 import no.hvl.past.names.Name;
-import no.hvl.past.names.PrintingStrategy;
 import no.hvl.past.systems.ComprSys;
+import no.hvl.past.systems.MessageType;
+import no.hvl.past.systems.QueryHandler;
 import no.hvl.past.systems.Sys;
 import no.hvl.past.util.IOStreamUtils;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.*;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.stream.Collectors;
 
+
+// TODO this functionality now appears so generic that it can be moved into the core framework
 public class GraphQLQueryDivider extends GraphQLQueryHandler {
 
-    private Logger logger = Logger.getLogger(GraphQLQueryDivider.class);
+    private Logger logger = LogManager.getLogger(GraphQLQueryDivider.class);
 
 //    // TODO make cursor its own class to have two advantages: 1) it can pre-calculate local names and field modifiers while requests are processed aynchronously 2) can make it technology independent of JSON
 //
@@ -339,7 +338,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
 
 
     @Override
-    public void handle(InputStream i, OutputStream o) throws IOException {
+    public void handle(InputStream i, OutputStream o) throws Exception {
         try {
             LocalDateTime parseStart = LocalDateTime.now();
             TypedTree typedTree = deserialize(i);
@@ -350,6 +349,9 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
                 this.handleIntrospectionQuery((IntrospectionQuery) typedTree, o);
             } else if (typedTree instanceof GraphQLQuery) {
                 GraphQLQuery globalQuery = (GraphQLQuery) typedTree;
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Handling the following query now: \n\n" +globalQuery.textualRepresentation());
+                }
                 Map<Sys, GraphQLQuery> localQueries = split(globalQuery);
                 Map<Sys, InputStream> localQueryResults = executeQueries(localQueries);
                 merge(localQueryResults, globalQuery, o);
@@ -366,7 +368,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             ExecutionInput e = new ExecutionInput.Builder()
                     .query(query.getQuery())
                     .operationName(query.getOperationName().get())
-                    .variables(query.getVariables().get())
+                    //.variables(query.getVariables().get())
                     .build();
             ExecutionResult execute = javaGraphQLEngine.execute(e);
             Map<String, Object> spec = execute.toSpecification();
@@ -406,7 +408,17 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             }
             QueryCursor.ConcatCursor cursor = (QueryCursor.ConcatCursor) queryRoot.getCursor().get();
             cursor.addResults(paramMap);
-            cursor.processOne(generator);
+
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            PrintStream printStream = new PrintStream(byteArrayOutputStream);
+            TreeCreator creator = new TreeCreator.JsonGeneratorTreeCreator(generator, printStream);
+            try {
+                cursor.processOne(creator);
+            } catch (JsonGenerationException e) {
+                logger.debug(e);
+                logger.debug(byteArrayOutputStream);
+
+            }
         }
         LocalDateTime finishMerge = LocalDateTime.now();
       //  System.out.println("Merging Query Response: " + Duration.between(startMerge, finishMerge).toMillis() + " ms");
@@ -456,7 +468,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
     }
 
 
-    private Map<Sys, InputStream> executeQueries(Map<Sys, GraphQLQuery> localQueries)  throws IOException {
+    private Map<Sys, InputStream> executeQueries(Map<Sys, GraphQLQuery> localQueries) throws Exception {
         LocalDateTime qSendStart = LocalDateTime.now();
         Map<Sys, InputStream> localQueryResults = new LinkedHashMap<>();
         for (Sys ep : localQueries.keySet()) {
@@ -489,7 +501,7 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
             LinkedHashMap<Sys, QueryHandler> handlerMap) throws IOException {
         // writing schema
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        GraphQLSchemaWriter schemaWriter = new GraphQLSchemaWriter();
+        GraphQLSchemaWriter schemaWriter = new GraphQLSchemaWriter(comprSys);
         comprSys.schema().accept(schemaWriter);
         BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(bos));
         schemaWriter.printToBuffer(bufferedWriter);
@@ -502,17 +514,28 @@ public class GraphQLQueryDivider extends GraphQLQueryHandler {
         GraphQLSchema executableSchema = new SchemaGenerator().makeExecutableSchema(typeReg, wiring);
         GraphQL graphQL = GraphQL.newGraphQL(executableSchema).build();
 
+        EntryPointType queries = new EntryPointType("Query");
+        EntryPointType mutations = new EntryPointType("Mutation");
+        Map<Name, MessageType> messages = new LinkedHashMap<>();
+        comprSys.messages().forEach(msg -> {
+            messages.put(msg.typeName(), msg);
+            if (msg.hasSideEffects()) {
+                mutations.addMessage(msg);
+            } else {
+                queries.addMessage(msg);
+            }
+        });
+
         GraphQLEndpoint endpoint = new GraphQLEndpoint(
                 comprSys.url(),
                 comprSys.schema(),
                 schemaWriter.getNameToText(),
+                messages,
                 schemaWriter.getMults(),
-                comprSys.messages().filter(m -> m instanceof QueryMesage).map(m -> (QueryMesage) m).collect(Collectors.toSet()),
-                comprSys.messages().filter(m -> m instanceof MutationMessage).map(m -> (MutationMessage) m).collect(Collectors.toSet()),
+                queries,
+                mutations,
                 objectMapper,
-                factory,
-                "Query",
-                "Mutation");
+                factory);
         return new GraphQLQueryDivider(comprSys, handlerMap, graphQL, endpoint);
     }
 }

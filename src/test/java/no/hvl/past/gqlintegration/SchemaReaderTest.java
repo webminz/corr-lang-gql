@@ -9,16 +9,13 @@ import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.hvl.past.gqlintegration.predicates.FieldArgument;
 import no.hvl.past.gqlintegration.predicates.InputType;
-import no.hvl.past.gqlintegration.predicates.MutationMessage;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.graph.*;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.predicates.Ordered;
 import no.hvl.past.graph.predicates.StringDT;
 import no.hvl.past.graph.predicates.TargetMultiplicity;
-import no.hvl.past.logic.Formula;
 import no.hvl.past.names.Name;
 import no.hvl.past.plugin.UnsupportedFeatureException;
 import no.hvl.past.systems.MessageArgument;
@@ -29,7 +26,6 @@ import org.junit.Test;
 
 import java.io.*;
 import java.util.HashSet;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -146,39 +142,42 @@ public class SchemaReaderTest extends GraphQLTest {
     @Test
     public void testSmall() throws GraphError, UnsupportedFeatureException {
         GraphQLSchemaReader converter = new GraphQLSchemaReader(new UniverseImpl(UniverseImpl.EMPTY)); ;
-        Sketch convert = converter.convert(Name.identifier("test"), littleManuallyProgrammed);
+        Sys convert = converter.convert("http:localhost", Name.identifier("test"), littleManuallyProgrammed,objectMapper,jsonFactory);
 
 
         Set<Name> expectedNodes = new HashSet<>();
         expectedNodes.add(Name.identifier("A"));
-        expectedNodes.add(Name.identifier("Query.b"));
+        expectedNodes.add(Name.identifier("b").prefixWith(Name.identifier("Query")));
         expectedNodes.add(Name.identifier("B"));
         expectedNodes.add(Name.identifier("Int"));
         expectedNodes.add(Name.identifier("String"));
         expectedNodes.add(Name.identifier("Boolean"));
+        expectedNodes.add(Name.identifier("Query"));
 
-        assertEquals(expectedNodes, convert.carrier().nodes().collect(Collectors.toSet()));
+        assertEquals(expectedNodes, convert.schema().carrier().nodes().collect(Collectors.toSet()));
 
         Set<Triple> expectedEdges = new HashSet<>();
         expectedEdges.add(Triple.edge(Name.identifier("A"), Name.identifier("name").prefixWith(Name.identifier("A")), Name.identifier("String")));
-        expectedEdges.add(Triple.edge(Name.identifier("Query.b"), Name.identifier("result").prefixWith(Name.identifier("Query.b")), Name.identifier("B")));
+        expectedEdges.add(Triple.edge(Name.identifier("b").prefixWith(Name.identifier("Query")), Name.identifier("result").prefixWith(Name.identifier("b").prefixWith(Name.identifier("Query"))), Name.identifier("B")));
         expectedEdges.add(Triple.edge(Name.identifier("B"), Name.identifier("age").prefixWith(Name.identifier("B")), Name.identifier("Int")));
         expectedEdges.add(Triple.edge(Name.identifier("B"), Name.identifier("a").prefixWith(Name.identifier("B")), Name.identifier("A")));
-        assertEquals(expectedEdges, convert.carrier().edges().collect(Collectors.toSet()));
+        assertEquals(expectedEdges, convert.schema().carrier().edges().collect(Collectors.toSet()));
     }
 
     @Test
     public void testReadBigger() throws GraphError, IOException, UnsupportedFeatureException {
         GraphQLSchemaReader converter = new GraphQLSchemaReader(new UniverseImpl(UniverseImpl.EMPTY));
-        Sketch result = converter.convert(Name.identifier("sales"), salesSchema);
+        Sys result = converter.convert("http://localhost",Name.identifier("sales"), salesSchema,objectMapper,jsonFactory);
 
         assertsAboutSalesSchema(result);
 
     }
 
-    private void assertsAboutSalesSchema(Sketch result) {
-        Set<Name> nodes = result.carrier().nodes().collect(Collectors.toSet());
+    static void assertsAboutSalesSchema(Sys result) {
+        Set<Name> nodes = result.schema().carrier().nodes().collect(Collectors.toSet());
         Set<Name> expectedNodes = Sets.newHashSet(
+                Name.identifier("Mutation"),
+                Name.identifier("Query"),
                 Name.identifier("String"),
                 Name.identifier("Int"),
                 Name.identifier("ID"),
@@ -189,22 +188,21 @@ public class SchemaReaderTest extends GraphQLTest {
                 Name.identifier("PurchaseItem"),
                 Name.identifier("PurchaseItem"),
                 Name.identifier("Customer"),
-                Name.identifier("Mutation.createCustomer"),
-                Name.identifier("Mutation.updateCustomer"),
-                Name.identifier("Mutation.setAddress"),
-                Name.identifier("Mutation.deleteCustomer"),
-                Name.identifier("Mutation.createPurchase"),
-                Name.identifier("Mutation.addPurchaseItem"),
-                Name.identifier("Mutation.deletePurchase"),
-                Name.identifier("Mutation.deletePurchase"),
-                Name.identifier("Mutation.createStore"),
-                Name.identifier("Mutation.deleteStore"),
-                Name.identifier("Query.customer"),
-                Name.identifier("Query.customers"),
-                Name.identifier("Query.purchase"),
-                Name.identifier("Query.purchases"),
-                Name.identifier("Query.store"),
-                Name.identifier("Query.stores")
+                Name.identifier("createCustomer").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("updateCustomer").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("setAddress").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("deleteCustomer").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("createPurchase").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("addPurchaseItem").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("deletePurchase").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("createStore").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("deleteStore").prefixWith(Name.identifier("Mutation")),
+                Name.identifier("customer").prefixWith(Name.identifier("Query")),
+                Name.identifier("customers").prefixWith(Name.identifier("Query")),
+                Name.identifier("purchase").prefixWith(Name.identifier("Query")),
+                Name.identifier("purchases").prefixWith(Name.identifier("Query")),
+                Name.identifier("store").prefixWith(Name.identifier("Query")),
+                Name.identifier("stores").prefixWith(Name.identifier("Query"))
         );
         assertEquals(expectedNodes, nodes);
 
@@ -231,17 +229,17 @@ public class SchemaReaderTest extends GraphQLTest {
                         Name.identifier("Purchase")
                 )
         );
-        assertEquals(expectedFieldsOfStore, result.carrier().outgoing(Name.identifier("Store")).filter(Triple::isEddge).collect(Collectors.toSet()));
+        assertEquals(expectedFieldsOfStore, result.schema().carrier().outgoing(Name.identifier("Store")).filter(Triple::isEddge).collect(Collectors.toSet()));
 
 
-        assertTrue(result.diagramsOn(Triple.node(Name.identifier("String"))).anyMatch(d -> StringDT.class.isAssignableFrom(d.label().getClass())));
+        assertTrue(result.schema().diagramsOn(Triple.node(Name.identifier("String"))).anyMatch(d -> StringDT.class.isAssignableFrom(d.label().getClass())));
 
-        assertEquals(1, result.diagramsOn(Triple.edge(
+        assertEquals(1, result.schema().diagramsOn(Triple.edge(
                 Name.identifier("Store"),
                 Name.identifier("manager").prefixWith(Name.identifier("Store")),
                 Name.identifier("ID")
         )).count());
-        assertTrue(result.diagramsOn(Triple.edge(
+        assertTrue(result.schema().diagramsOn(Triple.edge(
                 Name.identifier("Store"),
                 Name.identifier("manager").prefixWith(Name.identifier("Store")),
                 Name.identifier("ID")
@@ -252,12 +250,12 @@ public class SchemaReaderTest extends GraphQLTest {
         }));
 
 
-        assertEquals(1, result.diagramsOn(Triple.edge(
+        assertEquals(1, result.schema().diagramsOn(Triple.edge(
                 Name.identifier("Store"),
                 Name.identifier("address").prefixWith(Name.identifier("Store")),
                 Name.identifier("Address")
         )).count());
-        assertTrue(result.diagramsOn(Triple.edge(
+        assertTrue(result.schema().diagramsOn(Triple.edge(
                 Name.identifier("Store"),
                 Name.identifier("address").prefixWith(Name.identifier("Store")),
                 Name.identifier("Address")
@@ -267,12 +265,12 @@ public class SchemaReaderTest extends GraphQLTest {
                     ((TargetMultiplicity)d.label()).getLowerBound() == 0 ;
         }));
 
-        assertEquals(1, result.diagramsOn(Triple.edge(
+        assertEquals(1, result.schema().diagramsOn(Triple.edge(
                 Name.identifier("Store"),
                 Name.identifier("purchases").prefixWith(Name.identifier("Store")),
                 Name.identifier("Purchase")
         )).count());
-        assertTrue(result.diagramsOn(Triple.edge(
+        assertTrue(result.schema().diagramsOn(Triple.edge(
                 Name.identifier("Store"),
                 Name.identifier("purchases").prefixWith(Name.identifier("Store")),
                 Name.identifier("Purchase")
@@ -281,28 +279,18 @@ public class SchemaReaderTest extends GraphQLTest {
         }));
 
 
-        Set<Triple> argumentsOfSetAddress = result.carrier().outgoing(Name.identifier("Mutation.setAddress")).filter(Triple::isEddge).collect(Collectors.toSet());
+        Set<Triple> argumentsOfSetAddress = result.schema().carrier().outgoing(Name.identifier("setAddress").prefixWith(Name.identifier("Mutation"))).filter(Triple::isEddge).collect(Collectors.toSet());
         assertFalse(argumentsOfSetAddress.isEmpty());
         assertEquals(7, argumentsOfSetAddress.size());
 
-        Optional<MessageType> msgTypeForSetAddress = result.diagrams().filter(d -> d instanceof MessageType).map(d -> (MessageType) d).filter(messageType -> messageType.typeName().equals(Name.identifier("Mutation.setAddress"))).findFirst();
-        assertTrue(msgTypeForSetAddress.isPresent());
-        assertTrue(msgTypeForSetAddress.get() instanceof MutationMessage);
-        Optional<MessageArgument> thirdArgsOfSetaddress = result.diagrams().filter(d -> d instanceof MessageArgument).map(d -> (MessageArgument) d).filter(marg -> marg.message().equals(msgTypeForSetAddress.get())).filter(marg -> marg.argumentOrder() == 2).findFirst();
-        assertTrue(thirdArgsOfSetaddress.isPresent());
-        assertEquals(Name.identifier("String"),thirdArgsOfSetaddress.get().type());
-        assertEquals(Name.identifier("city").prefixWith(Name.identifier("Mutation.setAddress")),thirdArgsOfSetaddress.get().asEdge().getLabel());
-        assertTrue(thirdArgsOfSetaddress.get().isInput());
-
-    }
-
-    @Test
-    public void testFromIntrospectionQuery() throws Exception {
-        makeSureServerIsRunning("http://localhost:4011");
-        GraphQLAdapter adaptor = createAdapter();
-        Sys s = adaptor.parseSchema(Name.identifier("SALES"), "http://localhost:4011");
-
-        assertsAboutSalesSchema(s.schema());
+        MessageType msgTypeForSetAddress = result.getMessageType(Name.identifier("setAddress").prefixWith(Name.identifier("Mutation")));
+        assertNotNull(msgTypeForSetAddress);
+        MessageArgument thirdArgsOfSetaddress = msgTypeForSetAddress.inputs().get(2);
+        assertNotNull(thirdArgsOfSetaddress);
+        assertEquals(Name.identifier("String"),thirdArgsOfSetaddress.returnType());
+        assertEquals(Name.identifier("city").prefixWith(Name.identifier("setAddress").prefixWith(Name.identifier("Mutation"))), thirdArgsOfSetaddress.asEdge().getLabel());
+        assertTrue(thirdArgsOfSetaddress.isInput());
+        assertEquals(Name.identifier("Mutation"), msgTypeForSetAddress.getGroup().get().getTypeName());
     }
 
 
@@ -329,7 +317,7 @@ public class SchemaReaderTest extends GraphQLTest {
         GraphQLSchema graphQLSchema = new SchemaGenerator().makeExecutableSchema(parse, RuntimeWiring.newRuntimeWiring().build());
 
         GraphQLSchemaReader converter = new GraphQLSchemaReader(new UniverseImpl(UniverseImpl.EMPTY));
-        Sketch result = converter.convert(Name.anonymousIdentifier(), graphQLSchema);
+        Sketch result = converter.convert("http://localhost",Name.anonymousIdentifier(), graphQLSchema,objectMapper,jsonFactory).schema();
         assertEquals(3, result.carrier().outgoing(Name.identifier("CustomerData")).filter(Triple::isEddge).count());
 
         assertTrue(result.diagramsOn(Triple.node(Name.identifier("CustomerData"))).anyMatch(d -> d.label() instanceof InputType));
