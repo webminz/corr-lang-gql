@@ -1,6 +1,9 @@
 package no.hvl.past.gqlintegration.schema;
 
 import com.google.common.collect.Sets;
+import io.corrlang.domain.MessageArgument;
+import io.corrlang.domain.MessageType;
+import io.corrlang.domain.Sys;
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
 import no.hvl.past.gqlintegration.predicates.InputType;
 import no.hvl.past.graph.*;
@@ -11,9 +14,7 @@ import no.hvl.past.logic.Formula;
 import no.hvl.past.names.Name;
 import no.hvl.past.names.Prefix;
 import no.hvl.past.names.PrintingStrategy;
-import no.hvl.past.systems.MessageArgument;
-import no.hvl.past.systems.MessageType;
-import no.hvl.past.systems.Sys;
+
 import no.hvl.past.util.StreamExt;
 import no.hvl.past.util.StringUtils;
 

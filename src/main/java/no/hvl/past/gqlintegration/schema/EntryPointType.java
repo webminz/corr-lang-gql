@@ -1,6 +1,7 @@
 package no.hvl.past.gqlintegration.schema;
 
-import no.hvl.past.systems.MessageType;
+
+import io.corrlang.domain.MessageType;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -1,16 +1,14 @@
 package no.hvl.past.gqlintegration.queries;
 
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.Multimap;
 import no.hvl.past.graph.trees.TreeCreator;
-import no.hvl.past.keys.Key;
-import no.hvl.past.keys.KeyNotEvaluated;
+import io.corrlang.domain.keys.Key;
+import io.corrlang.domain.keys.KeyNotEvaluated;
 import no.hvl.past.names.AnonymousIdentifier;
 import no.hvl.past.names.Name;
 

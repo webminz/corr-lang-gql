@@ -5,6 +5,8 @@ package no.hvl.past.gqlintegration.schema;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.schema.*;
+import io.corrlang.domain.MessageArgument;
+import io.corrlang.domain.MessageContainer;
 import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
 import no.hvl.past.gqlintegration.predicates.*;
@@ -14,9 +16,8 @@ import no.hvl.past.graph.predicates.*;
 import no.hvl.past.names.Identifier;
 import no.hvl.past.names.Name;
 import no.hvl.past.names.PrintingStrategy;
-import no.hvl.past.plugin.UnsupportedFeatureException;
-import no.hvl.past.systems.MessageArgument;
-import no.hvl.past.systems.MessageContainer;
+import no.hvl.past.UnsupportedFeatureException;
+
 import no.hvl.past.util.Pair;
 
 
@@ -259,18 +260,18 @@ public class GraphQLSchemaReader {
         if (schema.getMutationType() != null) {
             mutations.setName(schema.getMutationType().getName());
         }
-        Map<Name, no.hvl.past.systems.MessageType> messageTypeMap = new HashMap<>();
+        Map<Name, io.corrlang.domain.MessageType> messageTypeMap = new HashMap<>();
 
 
         for (MessageType msgType : this.messageTypes) {
             List<MessageArgument> args = new ArrayList<>();
             List<MessageArgument> output = new ArrayList<>();
-            no.hvl.past.systems.MessageType msg;
+            io.corrlang.domain.MessageType msg;
             if (msgType.hasSideEffect) {
-                msg = new no.hvl.past.systems.MessageType(msgType.name, args, output, msgType.container , true);
+                msg = new io.corrlang.domain.MessageType(msgType.name, args, output, msgType.container , true);
                 mutations.addMessage(msg);
             } else {
-                msg = new no.hvl.past.systems.MessageType(msgType.name, args, output, msgType.container, false);
+                msg = new io.corrlang.domain.MessageType(msgType.name, args, output, msgType.container, false);
                 queries.addMessage(msg);
             }
             messageTypeMap.put(msgType.name, msg);

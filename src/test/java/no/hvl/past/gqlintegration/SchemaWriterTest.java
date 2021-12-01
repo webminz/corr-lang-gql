@@ -1,18 +1,16 @@
 package no.hvl.past.gqlintegration;
 
+import io.corrlang.domain.MessageArgument;
+import io.corrlang.domain.Sys;
 import no.hvl.past.gqlintegration.predicates.FieldArgument;
 import no.hvl.past.gqlintegration.predicates.InputType;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
-import no.hvl.past.graph.GraphBuilders;
 import no.hvl.past.graph.GraphError;
 import no.hvl.past.graph.Sketch;
 import no.hvl.past.graph.Universe;
-import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.predicates.*;
 import no.hvl.past.names.Name;
-import no.hvl.past.systems.MessageArgument;
-import no.hvl.past.systems.MessageType;
-import no.hvl.past.systems.Sys;
+
 import org.junit.Test;
 
 import java.io.BufferedWriter;
@@ -20,8 +18,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 
 import static junit.framework.TestCase.assertEquals;

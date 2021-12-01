@@ -2,8 +2,8 @@ package no.hvl.past.gqlintegration;
 
 import no.hvl.past.di.PropertyHolder;
 import no.hvl.past.graph.Universe;
-import no.hvl.past.plugin.MetaRegistry;
-import no.hvl.past.techspace.TechSpaceAdapterFactory;
+import no.hvl.past.MetaRegistry;
+import io.corrlang.plugins.techspace.TechSpaceAdapterFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import javax.annotation.PostConstruct;

@@ -4,14 +4,12 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import no.hvl.past.gqlintegration.GraphQLAdapter;
-import no.hvl.past.gqlintegration.GraphQLTest;
+import io.corrlang.domain.QueryHandler;
+import io.corrlang.domain.Sys;
 import no.hvl.past.gqlintegration.queries.GraphQLQuery;
 import no.hvl.past.graph.elements.Triple;
-import no.hvl.past.systems.QueryHandler;
 import no.hvl.past.graph.trees.QueryTree;
 import no.hvl.past.names.Name;
-import no.hvl.past.systems.Sys;
 import org.junit.Test;
 
 import java.io.ByteArrayInputStream;

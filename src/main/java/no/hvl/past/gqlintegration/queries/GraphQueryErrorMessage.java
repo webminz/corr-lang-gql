@@ -5,13 +5,11 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.base.Objects;
-import no.hvl.past.systems.ProcessingException;
+import io.corrlang.domain.ProcessingException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Stack;
 
 public class GraphQueryErrorMessage extends ProcessingException {

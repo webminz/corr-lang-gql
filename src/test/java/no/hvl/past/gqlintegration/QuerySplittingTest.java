@@ -3,19 +3,19 @@ package no.hvl.past.gqlintegration;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.corrlang.domain.ComprSys;
+import io.corrlang.domain.QueryHandler;
+import io.corrlang.domain.Sys;
 import no.hvl.past.gqlintegration.queries.*;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.graph.*;
 import no.hvl.past.graph.elements.Triple;
-import no.hvl.past.systems.QueryHandler;
 import no.hvl.past.graph.trees.Tree;
 import no.hvl.past.names.Name;
-import no.hvl.past.systems.ComprSys;
-import no.hvl.past.systems.Sys;
+
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.*;

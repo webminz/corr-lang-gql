@@ -9,6 +9,9 @@ import graphql.schema.idl.RuntimeWiring;
 import graphql.schema.idl.SchemaGenerator;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import io.corrlang.domain.MessageArgument;
+import io.corrlang.domain.MessageType;
+import io.corrlang.domain.Sys;
 import no.hvl.past.gqlintegration.predicates.InputType;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.graph.*;
@@ -17,10 +20,8 @@ import no.hvl.past.graph.predicates.Ordered;
 import no.hvl.past.graph.predicates.StringDT;
 import no.hvl.past.graph.predicates.TargetMultiplicity;
 import no.hvl.past.names.Name;
-import no.hvl.past.plugin.UnsupportedFeatureException;
-import no.hvl.past.systems.MessageArgument;
-import no.hvl.past.systems.MessageType;
-import no.hvl.past.systems.Sys;
+import no.hvl.past.UnsupportedFeatureException;
+
 import org.junit.Before;
 import org.junit.Test;
 

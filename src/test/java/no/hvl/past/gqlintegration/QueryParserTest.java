@@ -1,6 +1,8 @@
 package no.hvl.past.gqlintegration;
 
-import no.hvl.past.attributes.StringValue;
+import io.corrlang.domain.MessageType;
+import io.corrlang.domain.ProcessingException;
+import io.corrlang.domain.Sys;
 import no.hvl.past.gqlintegration.queries.GraphQLQuery;
 import no.hvl.past.gqlintegration.queries.GraphQueryErrorMessage;
 import no.hvl.past.gqlintegration.queries.ParsingErrorMessages;
@@ -12,9 +14,7 @@ import no.hvl.past.graph.predicates.FloatDT;
 import no.hvl.past.graph.predicates.StringDT;
 import no.hvl.past.graph.trees.*;
 import no.hvl.past.names.Name;
-import no.hvl.past.systems.MessageType;
-import no.hvl.past.systems.ProcessingException;
-import no.hvl.past.systems.Sys;
+
 import no.hvl.past.util.IOStreamUtils;
 import org.junit.Before;
 import org.junit.Test;

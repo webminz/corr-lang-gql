@@ -1,11 +1,6 @@
 package no.hvl.past.gqlintegration.queries;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import no.hvl.past.gqlintegration.GraphQLEndpoint;
-import no.hvl.past.graph.Sketch;
-import no.hvl.past.names.Name;
-import no.hvl.past.systems.Sys;
 import no.hvl.past.util.IOStreamUtils;
 
 import java.io.IOException;
@@ -13,7 +8,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.Map;
 
 public class GraphQLQueryDelegator extends GraphQLQueryHandler {
 

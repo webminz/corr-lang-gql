@@ -1,17 +1,11 @@
 package no.hvl.past.gqlintegration;
 
-import no.hvl.past.gqlintegration.GraphQLAdapter;
-import no.hvl.past.gqlintegration.GraphQLTest;
-import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
+import io.corrlang.domain.Sys;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.names.Name;
-import no.hvl.past.plugin.UnsupportedFeatureException;
-import no.hvl.past.systems.Sys;
-import no.hvl.past.techspace.TechSpaceException;
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;

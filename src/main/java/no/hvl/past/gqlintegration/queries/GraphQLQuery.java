@@ -1,21 +1,20 @@
 package no.hvl.past.gqlintegration.queries;
 
 
-import com.fasterxml.jackson.core.JsonFactory;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
+import io.corrlang.domain.ComprSys;
+import io.corrlang.domain.Sys;
 import no.hvl.past.graph.Graph;
 import no.hvl.past.graph.elements.Triple;
 import no.hvl.past.graph.trees.*;
-import no.hvl.past.keys.Key;
+import io.corrlang.domain.keys.Key;
 import no.hvl.past.names.Name;
 import no.hvl.past.names.Value;
-import no.hvl.past.systems.ComprSys;
-import no.hvl.past.systems.Sys;
+
 import no.hvl.past.util.StringUtils;
 
 
-import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;

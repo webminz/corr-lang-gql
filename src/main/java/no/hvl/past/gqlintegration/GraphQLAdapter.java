@@ -5,22 +5,22 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.corrlang.domain.*;
 import no.hvl.past.di.PropertyHolder;
 
 import no.hvl.past.gqlintegration.queries.GraphQLQueryDivider;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaReader;
 import no.hvl.past.gqlintegration.schema.GraphQLSchemaWriter;
 import no.hvl.past.graph.*;
-import no.hvl.past.systems.*;
 import no.hvl.past.graph.trees.QueryTree;
 import no.hvl.past.graph.trees.TypedTree;
 import no.hvl.past.names.Name;
 import no.hvl.past.names.PrintingStrategy;
-import no.hvl.past.plugin.UnsupportedFeatureException;
-import no.hvl.past.techspace.TechSpaceAdapter;
-import no.hvl.past.techspace.TechSpaceDirective;
-import no.hvl.past.techspace.TechSpaceException;
-import no.hvl.past.techspace.TechnologySpecificRules;
+import no.hvl.past.UnsupportedFeatureException;
+import io.corrlang.plugins.techspace.TechSpaceAdapter;
+import io.corrlang.plugins.techspace.TechSpaceDirective;
+import io.corrlang.plugins.techspace.TechSpaceException;
+import io.corrlang.plugins.techspace.TechnologySpecificRules;
 
 import java.io.*;
 import java.net.ConnectException;

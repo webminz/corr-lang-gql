@@ -1,6 +1,6 @@
 package no.hvl.past.gqlintegration;
 
-import no.hvl.past.techspace.TechSpace;
+import io.corrlang.plugins.techspace.TechSpace;
 
 public class GraphQLTechSpace implements TechSpace {
 

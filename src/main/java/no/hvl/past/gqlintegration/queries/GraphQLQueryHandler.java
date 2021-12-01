@@ -8,15 +8,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.corrlang.domain.MessageArgument;
+import io.corrlang.domain.MessageType;
+import io.corrlang.domain.ProcessingException;
+import io.corrlang.domain.QueryHandler;
 import no.hvl.past.gqlintegration.GraphQLEndpoint;
 import no.hvl.past.gqlintegration.caller.IntrospectionQuery;
 import no.hvl.past.graph.trees.*;
 import no.hvl.past.names.Name;
-import no.hvl.past.systems.MessageArgument;
-import no.hvl.past.systems.MessageType;
-import no.hvl.past.systems.ProcessingException;
-import no.hvl.past.systems.QueryHandler;
-import no.hvl.past.util.StreamExt;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
