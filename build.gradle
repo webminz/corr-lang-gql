@@ -5,8 +5,8 @@ plugins {
 
 generateGrammarSource {
     maxHeapSize = "64m"
-    arguments += ['-package', 'no.hvl.past.gqlintegration.syntax.parser']
-    outputDirectory = new File("src/generated/no/hvl/past/gqlintegration/syntax/parser")
+    arguments += ['-package', 'io.corrlang.gqlintegration.syntax.parser']
+    outputDirectory = new File("src/generated/io/corrlang/gqlintegration/syntax/parser")
 }
 
 
@@ -32,8 +32,12 @@ sourceSets {
     }
 }
 
+clean {
+    delete 'src/generated'
+}
+
 test {
     filter {
-        includeTestsMatching "no.hvl.past.gqlintegration.GraphQLTestsuite*"
+        includeTestsMatching "io.corrlang.gqlintegration.GraphQLTestsuite*"
     }
 }
