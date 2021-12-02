@@ -9,9 +9,14 @@ generateGrammarSource {
     outputDirectory = new File("src/generated/io/corrlang/gqlintegration/syntax/parser")
 }
 
+configurations {
+    directDependencies
+}
+
 
 dependencies {
-    implementation 'com.graphql-java:graphql-java:16.1'
+    directDependencies 'com.graphql-java:graphql-java:16.1'
+    implementation configurations.directDependencies
     implementation project(':mdegraphlib')
     implementation project(':corr-lang-core')
     testImplementation project(':mdegraphlib').sourceSets.test.output
@@ -40,4 +45,9 @@ test {
     filter {
         includeTestsMatching "io.corrlang.gqlintegration.GraphQLTestsuite*"
     }
+}
+
+task exportDependencies(type: Copy) {
+    from configurations.directDependencies
+    into "${buildDir}/extlibs"
 }
