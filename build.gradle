@@ -31,3 +31,9 @@ sourceSets {
         resources.srcDir 'src/test/resources'
     }
 }
+
+test {
+    filter {
+        includeTestsMatching "no.hvl.past.gqlintegration.GraphQLTestsuite*"
+    }
+}
